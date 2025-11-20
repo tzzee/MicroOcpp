@@ -5,6 +5,7 @@
 #include "MicroOcpp.h"
 
 #include <MicroOcpp/Core/Context.h>
+#include <MicroOcpp/Core/Configuration.h>
 #include <MicroOcpp/Model/Model.h>
 #include <MicroOcpp/Model/Metering/MeteringService.h>
 #include <MicroOcpp/Model/SmartCharging/SmartChargingService.h>
