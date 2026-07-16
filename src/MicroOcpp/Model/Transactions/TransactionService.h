@@ -85,6 +85,15 @@ public:
         // stop transaction, but neither upon user request nor OCPP server request (e.g. after PowerLoss)
         bool abortTransaction(Ocpp201::Transaction::StoppedReason stoppedReason = Ocpp201::Transaction::StoppedReason::Other, Ocpp201::TransactionEventTriggerReason stopTrigger = Ocpp201::TransactionEventTriggerReason::AbnormalCondition);
 
+        /**
+         * @brief Discard all stopped transactions, including their queued TransactionEvents.
+         *
+         * @details This operation is irreversible. It returns false while a TransactionEvent
+         *          request is in flight to keep its completion callback valid.
+         * @return True if at least one stopped transaction was discarded.
+         */
+        bool discardStoppedTransactions();
+
         Ocpp201::Transaction *getTransaction();
 
         bool ocppPermitsCharge();
