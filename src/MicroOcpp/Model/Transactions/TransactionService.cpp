@@ -745,6 +745,54 @@ bool TransactionService::Evse::endAuthorization(IdToken idToken, bool validateId
 bool TransactionService::Evse::abortTransaction(Ocpp201::Transaction::StoppedReason stoppedReason, TransactionEventTriggerReason stopTrigger) {
     return endTransaction(stoppedReason, stopTrigger);
 }
+
+bool TransactionService::Evse::discardStoppedTransactions() {
+    if (txEventFrontIsRequested) {
+        MO_DBG_WARN("cannot discard stopped transactions while TransactionEvent is in flight");
+        return false;
+    }
+
+    const unsigned int initialBegin = txNrBegin;
+    const unsigned int initialEnd = txNrEnd;
+    const unsigned int txSize = (initialEnd + MAX_TX_CNT - initialBegin) % MAX_TX_CNT;
+    bool discarded = false;
+
+    for (unsigned int offset = 0; offset < txSize; offset++) {
+        const unsigned int txNr = (initialBegin + offset) % MAX_TX_CNT;
+        std::unique_ptr<Ocpp201::Transaction> loaded;
+        Ocpp201::Transaction *candidate = nullptr;
+        if (transaction && transaction->txNr == txNr) {
+            candidate = transaction.get();
+        } else {
+            loaded = txStore.loadTransaction(txNr);
+            candidate = loaded.get();
+        }
+
+        if (!candidate || candidate->active || !candidate->stopped) {
+            continue;
+        }
+        if (!txStore.remove(txNr)) {
+            MO_DBG_ERR("could not discard stopped transaction");
+            continue;
+        }
+        if (transaction && candidate == transaction.get()) {
+            transaction.reset();
+        }
+        discarded = true;
+    }
+
+    if (discarded) {
+        // No request is in flight. Rebuild queue state from the updated store.
+        txEventFront = nullptr;
+        txFrontCache = nullptr;
+        txFront = nullptr;
+        txEventFrontIsRequested = false;
+        txStore.discoverStoredTx(txNrBegin, txNrEnd);
+        txNrFront = txNrBegin;
+    }
+    return discarded;
+}
+
 MicroOcpp::Ocpp201::Transaction *TransactionService::Evse::getTransaction() {
     return transaction.get();
 }
