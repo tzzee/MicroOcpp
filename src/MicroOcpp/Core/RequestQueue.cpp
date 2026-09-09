@@ -353,9 +353,17 @@ bool RequestQueue::receiveMessage(const char* payload, size_t length) {
  */
 void RequestQueue::receiveResponse(JsonArray json) {
 
-    if (!sendReqFront || !sendReqFront->receiveResponse(json)) {
+    /*
+     * Only the messageID decides whether this response belongs to the request in flight. The
+     * result of receiveResponse() does not: an Operation which handles a CALLERROR without
+     * aborting returns false, and that request is finished all the same.
+     */
+    if (!sendReqFront || strcmp(sendReqFront->getMessageID(), json[1] | "")) {
         MO_DBG_WARN("Received response doesn't match pending operation");
+        return;
     }
+
+    sendReqFront->receiveResponse(json);
 
     sendReqFront.reset();
 }

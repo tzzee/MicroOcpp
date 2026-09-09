@@ -65,6 +65,10 @@ void Request::setMessageID(const char *id){
     messageID = id;
 }
 
+const char *Request::getMessageID() {
+    return messageID.c_str();
+}
+
 Request::CreateRequestResult Request::createRequest(JsonDoc& requestJson) {
 
     if (messageID.empty()) {

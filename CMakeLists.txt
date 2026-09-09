@@ -154,6 +154,7 @@ set(MO_SRC_UNIT
     tests/FirmwareManagement.cpp
     tests/ChargePointError.cpp
     tests/Boot.cpp
+    tests/RequestQueue.cpp
     tests/Security.cpp
 )
 

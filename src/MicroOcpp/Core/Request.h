@@ -47,6 +47,8 @@ public:
 
     Operation *getOperation();
 
+    const char *getMessageID(); //empty before the request has been created
+
     void setTimeout(unsigned long timeout); //0 = disable timeout
     bool isTimeoutExceeded();
     void executeTimeout(); //call Timeout Listener
