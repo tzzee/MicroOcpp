@@ -17,6 +17,14 @@
 #define MO_REQUEST_CACHE_MAXSIZE 10
 #endif
 
+/*
+ * How long to wait for the response to a sent request before sending it again. This is not
+ * the deadline after which a request is given up, see Request::setTimeout.
+ */
+#ifndef MO_REQUEST_RESPONSE_TIMEOUT
+#define MO_REQUEST_RESPONSE_TIMEOUT 40000
+#endif
+
 #ifndef MO_NUM_REQUEST_QUEUES
 #define MO_NUM_REQUEST_QUEUES 10
 #endif
@@ -59,9 +67,13 @@ private:
     VolatileRequestQueue defaultSendQueue;
     VolatileRequestQueue *preBootSendQueue = nullptr;
     std::unique_ptr<Request> sendReqFront;
+    String sendReqFrontRaw; //the message sent for sendReqFront; empty if it has not been sent yet
+    unsigned long sendReqFrontSentAt = 0; //when sendReqFrontRaw was passed to the connection
 
     VolatileRequestQueue recvQueue;
     std::unique_ptr<Request> recvReqFront;
+
+    void releaseSendReqFrontRaw(); //forget the message sent for sendReqFront
 
     bool receiveMessage(const char* payload, size_t length); //receive from  server: either a request or response
     void receiveRequest(JsonArray json);

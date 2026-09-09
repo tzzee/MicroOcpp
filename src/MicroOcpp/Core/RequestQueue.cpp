@@ -11,6 +11,7 @@
 #include <MicroOcpp/Core/OperationRegistry.h>
 #include <MicroOcpp/Operations/StatusNotification.h>
 
+#include <MicroOcpp/Platform.h>
 #include <MicroOcpp/Debug.h>
 
 size_t removePayload(const char *src, size_t src_size, char *dst, size_t dst_size);
@@ -120,7 +121,8 @@ bool VolatileRequestQueue::pushRequestBack(std::unique_ptr<Request> request) {
 }
 
 RequestQueue::RequestQueue(Connection& connection, OperationRegistry& operationRegistry)
-            : MemoryManaged("RequestQueue"), connection(connection), operationRegistry(operationRegistry) {
+            : MemoryManaged("RequestQueue"), connection(connection), operationRegistry(operationRegistry),
+              sendReqFrontRaw(makeString(getMemoryTag())) {
 
     ReceiveTXTcallback callback = [this] (const char *payload, size_t length) {
         return this->receiveMessage(payload, length);
@@ -141,6 +143,7 @@ void RequestQueue::loop() {
         MO_DBG_INFO("operation timeout: %s", sendReqFront->getOperationType());
         sendReqFront->executeTimeout();
         sendReqFront.reset();
+        releaseSendReqFrontRaw();
     }
 
     if (recvReqFront && recvReqFront->isTimeoutExceeded()) {
@@ -222,11 +225,36 @@ void RequestQueue::loop() {
             if (success) {
                 MO_DBG_TRAFFIC_OUT(out.c_str());
                 sendReqFront->setRequestSent(); //mask as sent and wait for response / timeout
+                sendReqFrontRaw = std::move(out); //keep it in case it must be sent again
+                sendReqFrontSentAt = mocpp_tick_ms();
             }
 
             return;
         }
     }
+
+    /**
+     * Send the req message in flight again, if its response is missing
+     *
+     * The message is sent again unchanged, so the server sees the same messageID with the same
+     * payload (OCPP-J 4.1.4). Creating the request anew would pick up payload changes, e.g.
+     * MeterValues adds the transactionId once the server has assigned one.
+     */
+    if (sendReqFront && !sendReqFrontRaw.empty() &&
+            mocpp_tick_ms() - sendReqFrontSentAt >= MO_REQUEST_RESPONSE_TIMEOUT) {
+
+        if (connection.sendTXT(sendReqFrontRaw.c_str(), sendReqFrontRaw.length())) {
+            MO_DBG_INFO("no response, send again: %s", sendReqFront->getOperationType());
+            MO_DBG_TRAFFIC_OUT(sendReqFrontRaw.c_str());
+            sendReqFrontSentAt = mocpp_tick_ms();
+        }
+    }
+}
+
+void RequestQueue::releaseSendReqFrontRaw() {
+    //free the buffer instead of only resetting its length: a message can take several kB
+    String empty = makeString(getMemoryTag());
+    sendReqFrontRaw.swap(empty);
 }
 
 void RequestQueue::sendRequest(std::unique_ptr<Request> op){
@@ -366,6 +394,7 @@ void RequestQueue::receiveResponse(JsonArray json) {
     sendReqFront->receiveResponse(json);
 
     sendReqFront.reset();
+    releaseSendReqFrontRaw();
 }
 
 void RequestQueue::receiveRequest(JsonArray json) {
