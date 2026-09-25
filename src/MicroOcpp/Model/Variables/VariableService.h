@@ -30,6 +30,11 @@
 #define MO_VARIABLESTORE_FN_SUFFIX ".jsn"
 #endif
 
+#ifndef MO_NOTIFYREPORT_ITEMS_PER_MESSAGE_DEFAULT
+// NotifyReport entries per message when DeviceDataCtrlr.ItemsPerMessage is not declared
+#define MO_NOTIFYREPORT_ITEMS_PER_MESSAGE_DEFAULT 10
+#endif
+
 namespace MicroOcpp {
 
 template <class T>

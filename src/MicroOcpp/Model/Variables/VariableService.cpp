@@ -16,6 +16,8 @@
 #include <MicroOcpp/Operations/GetVariables.h>
 #include <MicroOcpp/Operations/GetBaseReport.h>
 #include <MicroOcpp/Operations/NotifyReport.h>
+
+#include <algorithm>
 #include <MicroOcpp/Core/Request.h>
 
 #include <cstring>
@@ -460,15 +462,40 @@ GenericDeviceModelStatus VariableService::getBaseReport(int requestId, ReportBas
         return GenericDeviceModelStatus_EmptyResultSet;
     }
 
-    auto notifyReport = makeRequest(new Ocpp201::NotifyReport(
-            context.getModel(), 
-            requestId,
-            context.getModel().getClock().now(),
-            false,
-            0,
-            variables));
+    // Split the report into NotifyReport messages of at most ItemsPerMessage entries (tbc / seqNo).
+    // Sending the whole inventory in one message ignores the advertised DeviceDataCtrlr limits and
+    // makes the TCP stack hold a >10 kB frame in internal RAM until it is acknowledged.
+    size_t itemsPerMessage = MO_NOTIFYREPORT_ITEMS_PER_MESSAGE_DEFAULT;
+    if (auto itemsVar = getVariable(ComponentId("DeviceDataCtrlr"), "ItemsPerMessage")) {
+        if (itemsVar->getInternalDataType() == Variable::InternalDataType::Int && itemsVar->getInt() > 0) {
+            itemsPerMessage = (size_t) itemsVar->getInt();
+        }
+    }
 
-    context.initiateRequest(std::move(notifyReport));
+    const auto generatedAt = context.getModel().getClock().now();
+    int seqNo = 0;
+    for (size_t offset = 0; offset < variables.size(); offset += itemsPerMessage) {
+        const size_t end = std::min(variables.size(), offset + itemsPerMessage);
+        Vector<Variable*> chunk = makeVector<Variable*>(getMemoryTag());
+        chunk.reserve(end - offset);
+        for (size_t i = offset; i < end; i++) {
+            chunk.push_back(variables[i]);
+        }
+        const bool tbc = end < variables.size();
+
+        auto notifyReport = makeRequest(new Ocpp201::NotifyReport(
+                context.getModel(),
+                requestId,
+                generatedAt,
+                tbc,
+                seqNo,
+                chunk));
+
+        context.initiateRequest(std::move(notifyReport));
+        seqNo++;
+    }
+
+    MO_DBG_DEBUG("GetBaseReport %i: %zu variables in %i NotifyReport message(s)", requestId, variables.size(), seqNo);
 
     return GenericDeviceModelStatus_Accepted;
 }
