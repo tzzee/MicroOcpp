@@ -365,6 +365,9 @@ void TransactionService::Evse::loop() {
             txStartCondition = true;
             if (transaction->remoteStartId >= 0) {
                 triggerReason = TransactionEventTriggerReason::RemoteStart;
+            } else if (transaction->trackEvConnected) {
+                //the cable was already plugged in a previous loop, so the authorization completes the start (E03.FR.12)
+                triggerReason = TransactionEventTriggerReason::Authorized;
             } else {
                 triggerReason = TransactionEventTriggerReason::CablePluggedIn;
             }
