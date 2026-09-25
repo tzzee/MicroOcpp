@@ -188,7 +188,7 @@ MeteringServiceEvse::MeteringServiceEvse(Model& model, unsigned int evseId)
     sampledDataTxStartedMeasurands = varService->declareVariable<const char*>("SampledDataCtrlr", "TxStartedMeasurands", "");
     sampledDataTxUpdatedMeasurands = varService->declareVariable<const char*>("SampledDataCtrlr", "TxUpdatedMeasurands", "");
     sampledDataTxEndedMeasurands = varService->declareVariable<const char*>("SampledDataCtrlr", "TxEndedMeasurands", "");
-    alignedDataMeasurands = varService->declareVariable<const char*>("AlignedDataCtrlr", "AlignedDataMeasurands", "");
+    alignedDataMeasurands = varService->declareVariable<const char*>("AlignedDataCtrlr", "Measurands", MO_ALIGNEDDATA_MEASURANDS_DEFAULT);
 }
 
 void MeteringServiceEvse::addMeterValueInput(std::function<double(ReadingContext)> valueInput, const SampledValueProperties& properties) {
@@ -277,6 +277,9 @@ std::unique_ptr<MeterValue> MeteringServiceEvse::takeTxEndedMeterValue(ReadingCo
 std::unique_ptr<MeterValue> MeteringServiceEvse::takeTriggeredMeterValues() {
     return takeMeterValue(alignedDataMeasurands, trackAlignedDataMeasurandsWriteCount, trackSampledValueInputsSizeAligned, MO_MEASURAND_TYPE_ALIGNED, ReadingContext_Trigger);
 }
+std::unique_ptr<MeterValue> MeteringServiceEvse::takeAlignedMeterValue(ReadingContext readingContext) {
+    return takeMeterValue(alignedDataMeasurands, trackAlignedDataMeasurandsWriteCount, trackSampledValueInputsSizeAligned, MO_MEASURAND_TYPE_ALIGNED, readingContext);
+}
 
 bool MeteringServiceEvse::existsMeasurand(const char *measurand, size_t len) {
     for (size_t i = 0; i < sampledValueInputs.size(); i++) {
@@ -336,12 +339,12 @@ MeteringService::MeteringService(Model& model, size_t numEvses) {
     varService->declareVariable<const char*>("SampledDataCtrlr", "TxStartedMeasurands", "");
     varService->declareVariable<const char*>("SampledDataCtrlr", "TxUpdatedMeasurands", "");
     varService->declareVariable<const char*>("SampledDataCtrlr", "TxEndedMeasurands", "");
-    varService->declareVariable<const char*>("AlignedDataCtrlr", "AlignedDataMeasurands", "");
+    varService->declareVariable<const char*>("AlignedDataCtrlr", "Measurands", MO_ALIGNEDDATA_MEASURANDS_DEFAULT);
 
     varService->registerValidator<const char*>("SampledDataCtrlr", "TxStartedMeasurands", validateSelectString, this);
     varService->registerValidator<const char*>("SampledDataCtrlr", "TxUpdatedMeasurands", validateSelectString, this);
     varService->registerValidator<const char*>("SampledDataCtrlr", "TxEndedMeasurands", validateSelectString, this);
-    varService->registerValidator<const char*>("AlignedDataCtrlr", "AlignedDataMeasurands", validateSelectString, this);
+    varService->registerValidator<const char*>("AlignedDataCtrlr", "Measurands", validateSelectString, this);
 
     for (size_t evseId = 0; evseId < std::min(numEvses, (size_t)MO_NUM_EVSEID); evseId++) {
         evses[evseId] = new MeteringServiceEvse(model, evseId);

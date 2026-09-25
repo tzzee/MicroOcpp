@@ -66,6 +66,11 @@ public:
     bool toJson(JsonDoc& out);
 };
 
+#ifndef MO_ALIGNEDDATA_MEASURANDS_DEFAULT
+// Factory default of AlignedDataCtrlr.Measurands. Empty means no clock-aligned meter values until the CSMS sets it
+#define MO_ALIGNEDDATA_MEASURANDS_DEFAULT ""
+#endif
+
 #define MO_MEASURAND_TYPE_TXSTARTED (1 << 0)
 #define MO_MEASURAND_TYPE_TXUPDATED (1 << 1)
 #define MO_MEASURAND_TYPE_TXENDED   (1 << 2)
@@ -131,6 +136,8 @@ public:
     std::unique_ptr<MeterValue> takeTxUpdatedMeterValue(ReadingContext context = ReadingContext_SamplePeriodic);
     std::unique_ptr<MeterValue> takeTxEndedMeterValue(ReadingContext context);
     std::unique_ptr<MeterValue> takeTriggeredMeterValues();
+    // Clock-aligned sample of AlignedDataCtrlr.Measurands (OCPP 2.0.1 J01), context Sample.Clock by default
+    std::unique_ptr<MeterValue> takeAlignedMeterValue(ReadingContext context = ReadingContext_SampleClock);
 
     bool existsMeasurand(const char *measurand, size_t len);
 };
