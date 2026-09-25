@@ -85,6 +85,14 @@ public:
     std::unique_ptr<JsonDoc> getChargePointCredentials();
 
     void notifyRegistrationStatus(RegistrationStatus status);
+
+    /**
+     * @brief Registration status of the last BootNotification response.
+     *
+     * @details Pending until the CSMS accepts a BootNotification. While not Accepted, BootService
+     *          keeps sending BootNotifications by itself, so the host does not need to trigger one.
+     */
+    RegistrationStatus getRegistrationStatus() const {return status;}
     void setRetryInterval(unsigned long interval);
 
     static bool loadBootStats(std::shared_ptr<FilesystemAdapter> filesystem, BootStats& bstats);
