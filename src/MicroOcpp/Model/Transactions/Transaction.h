@@ -265,6 +265,7 @@ public:
     //bool trackParkingBayOccupancy; // not supported
     bool trackEvConnected = false;
     bool trackAuthorized = false;
+    bool stopByRemote = false; //authorization ended by RequestStopTransaction while the TxStopPoint keeps the transaction (not persisted)
     bool trackDataSigned = false;
     bool trackPowerPathClosed = false;
     bool trackEnergyTransfer = false;

@@ -83,6 +83,18 @@ public:
         bool abortTransaction(Ocpp201::Transaction::StoppedReason stoppedReason = Ocpp201::Transaction::StoppedReason::Other, Ocpp201::TransactionEventTriggerReason stopTrigger = Ocpp201::TransactionEventTriggerReason::AbnormalCondition);
 
         /**
+         * @brief Handle a RequestStopTransaction for the ongoing transaction.
+         *
+         * @details If the TxStopPoint ends the transaction when the authorization ends (Authorized or
+         *          PowerPathClosed), or if the transaction has not started yet, the transaction is ended
+         *          with stoppedReason Remote (F03.FR.03). Otherwise only the authorization ends: the energy
+         *          offer stops, an Updated event with triggerReason RemoteStop is sent and the transaction
+         *          continues until its TxStopPoint is reached, e.g. the EV is unplugged (F03.FR.02).
+         * @return False if there is no active transaction.
+         */
+        bool requestStopByRemote();
+
+        /**
          * @brief Discard all stopped transactions, including their queued TransactionEvents.
          *
          * @details This operation is irreversible. It returns false while a TransactionEvent

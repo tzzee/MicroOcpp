@@ -159,7 +159,7 @@ RequestStartStopStatus RemoteControlService::requestStopTransaction(const char *
     for (unsigned int evseId = 0; evseId < MO_NUM_EVSEID; evseId++) {
         if (auto evse = txService->getEvse(evseId)) {
             if (evse->getTransaction() && !strcmp(evse->getTransaction()->transactionId, transactionId)) {
-                success = evse->abortTransaction(Ocpp201::Transaction::StoppedReason::Remote, Ocpp201::TransactionEventTriggerReason::RemoteStop);
+                success = evse->requestStopByRemote();
                 break;
             }
         }

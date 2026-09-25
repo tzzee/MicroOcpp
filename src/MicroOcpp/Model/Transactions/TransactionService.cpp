@@ -493,7 +493,10 @@ void TransactionService::Evse::loop() {
         } else if (!(transaction->isAuthorizationActive && transaction->isAuthorized) && transaction->trackAuthorized) {
             transaction->trackAuthorized = false;
             txUpdateCondition = true;
-            triggerReason = TransactionEventTriggerReason::StopAuthorized;
+            triggerReason = transaction->stopByRemote ?
+                    TransactionEventTriggerReason::RemoteStop : //F03.FR.02
+                    TransactionEventTriggerReason::StopAuthorized;
+            transaction->stopByRemote = false;
         } else if (mvClockAligned) {
             txUpdateCondition = true;
             triggerReason = TransactionEventTriggerReason::MeterValueClock;
@@ -603,6 +606,23 @@ void TransactionService::Evse::loop() {
         MO_DBG_DEBUG("new txEvent is front element");
         txEventFront = std::move(txEvent);
     }
+}
+
+bool TransactionService::Evse::requestStopByRemote() {
+    if (!transaction || !transaction->active) {
+        return false;
+    }
+    if (!transaction->started ||
+            txService.isTxStopPoint(TxStartStopPoint::Authorized) ||
+            txService.isTxStopPoint(TxStartStopPoint::PowerPathClosed)) {
+        return abortTransaction(Ocpp201::Transaction::StoppedReason::Remote, TransactionEventTriggerReason::RemoteStop);
+    }
+    if (!transaction->isAuthorizationActive) {
+        return true; //authorization already ended, the transaction waits for its TxStopPoint
+    }
+    transaction->isAuthorizationActive = false;
+    transaction->stopByRemote = true;
+    return true;
 }
 
 bool TransactionService::Evse::addClockAlignedMeterValue(std::unique_ptr<Ocpp201::MeterValue>&& meterValue) {
