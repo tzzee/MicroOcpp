@@ -64,6 +64,8 @@ public:
         std::unique_ptr<Ocpp201::TransactionEventData> txEventFront;
         bool txEventFrontIsRequested = false;
 
+        std::unique_ptr<Ocpp201::MeterValue> mvClockAligned; //clock-aligned sample waiting to be sent in a TransactionEvent
+
     public:
         Evse(Context& context, TransactionService& txService, Ocpp201::TransactionStoreEvse& txStore, unsigned int evseId);
         virtual ~Evse();
@@ -90,6 +92,19 @@ public:
         bool discardStoppedTransactions();
 
         Ocpp201::Transaction *getTransaction();
+
+        /**
+         * @brief Queue a clock-aligned meter value to be sent in the ongoing transaction.
+         *
+         * @details The value is sent in the next TransactionEvent (eventType Updated,
+         *          triggerReason MeterValueClock), so that it carries the transactionId
+         *          (OCPP 2.0.1 J01.FR.22). A value queued before the previous one was
+         *          sent replaces it.
+         * @return False if there is no started and not yet stopped transaction. meterValue
+         *         is then left untouched, so that the caller can send it in a
+         *         MeterValuesRequest instead.
+         */
+        bool addClockAlignedMeterValue(std::unique_ptr<Ocpp201::MeterValue>&& meterValue);
 
         bool ocppPermitsCharge();
 

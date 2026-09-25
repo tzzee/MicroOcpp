@@ -431,6 +431,10 @@ void TransactionService::Evse::loop() {
     //General Metering behavior. There is another section for TxStarted, Updated and TxEnded MeterValues
     std::unique_ptr<MicroOcpp::Ocpp201::MeterValue> mvTxUpdated;
 
+    if (!transaction) {
+        mvClockAligned.reset(); //transaction gone before the clock-aligned value could be sent
+    }
+
     if (transaction) {
 
         if (txService.sampledDataTxUpdatedInterval && txService.sampledDataTxUpdatedInterval->getInt() > 0 && mocpp_tick_ms() - transaction->lastSampleTimeTxUpdated >= (unsigned long)txService.sampledDataTxUpdatedInterval->getInt() * 1000UL) {
@@ -487,6 +491,9 @@ void TransactionService::Evse::loop() {
             transaction->trackAuthorized = false;
             txUpdateCondition = true;
             triggerReason = TransactionEventTriggerReason::StopAuthorized;
+        } else if (mvClockAligned) {
+            txUpdateCondition = true;
+            triggerReason = TransactionEventTriggerReason::MeterValueClock;
         } else if (mvTxUpdated) {
             txUpdateCondition = true;
             triggerReason = TransactionEventTriggerReason::MeterValuePeriodic;
@@ -549,6 +556,9 @@ void TransactionService::Evse::loop() {
         if (mvTxUpdated) {
             txEvent->meterValue.push_back(std::move(mvTxUpdated));
         }
+        if (mvClockAligned) {
+            txEvent->meterValue.push_back(std::move(mvClockAligned));
+        }
 
         if (transaction->notifyStopIdToken && transaction->stopIdToken) {
             txEvent->idToken = std::unique_ptr<IdToken>(new IdToken(*transaction->stopIdToken.get(), getMemoryTag()));
@@ -590,6 +600,14 @@ void TransactionService::Evse::loop() {
         MO_DBG_DEBUG("new txEvent is front element");
         txEventFront = std::move(txEvent);
     }
+}
+
+bool TransactionService::Evse::addClockAlignedMeterValue(std::unique_ptr<Ocpp201::MeterValue>&& meterValue) {
+    if (!meterValue || !transaction || !transaction->started || transaction->stopped) {
+        return false;
+    }
+    mvClockAligned = std::move(meterValue);
+    return true;
 }
 
 void TransactionService::Evse::setConnectorPluggedInput(std::function<bool()> connectorPlugged) {
