@@ -88,7 +88,8 @@ std::unique_ptr<JsonDoc> TransactionEvent::createReq() {
         transactionInfo["chargingState"] = serializeTransactionEventChargingState(txEvent->chargingState);
     }
 
-    if (txEvent->transaction->stoppedReason != Transaction::StoppedReason::Local &&
+    if (txEvent->eventType == TransactionEventData::Type::Ended && //Updated events sent after the stop must not carry it
+            txEvent->transaction->stoppedReason != Transaction::StoppedReason::Local &&
             serializeTransactionStoppedReason(txEvent->transaction->stoppedReason)) { // optional
         transactionInfo["stoppedReason"] = serializeTransactionStoppedReason(txEvent->transaction->stoppedReason);
     }
@@ -133,6 +134,12 @@ void TransactionEvent::processConf(JsonObject payload) {
     if (payload.containsKey("idTokenInfo")) {
         if (strcmp(payload["idTokenInfo"]["status"], "Accepted")) {
             MO_DBG_INFO("transaction deAuthorized");
+            if (txEvent->transaction->active) {
+                //the Ended event takes its reasons from here. Without them it is stored with an undefined
+                //triggerReason, which cannot be loaded back from flash and the Ended event gets lost
+                txEvent->transaction->stopTrigger = TransactionEventTriggerReason::Deauthorized;
+                txEvent->transaction->stoppedReason = Transaction::StoppedReason::DeAuthorized;
+            }
             txEvent->transaction->active = false;
             txEvent->transaction->isDeauthorized = true;
         }
