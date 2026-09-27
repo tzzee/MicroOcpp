@@ -38,6 +38,11 @@ private:
     std::shared_ptr<Configuration> previousBuildNumberString;
     String buildNumber;
 
+    //OCPP 2.0.1: requestId of the last UpdateFirmwareRequest. Persisted so that the Installed notification
+    //after the reboot into the new firmware can still carry it
+    std::shared_ptr<Configuration> requestIdInt;
+    int getNotificationRequestId();
+
     std::function<DownloadStatus()> downloadStatusInput;
     bool downloadIssued = false;
 
@@ -85,6 +90,12 @@ public:
     void loop();
 
     void scheduleFirmwareUpdate(const char *location, Timestamp retreiveDate, unsigned int retries = 1, unsigned int retryInterval = 0);
+
+    /*
+     * OCPP 2.0.1: sets the requestId of the UpdateFirmwareRequest that the next FirmwareStatusNotifications
+     * refer to. Call before scheduleFirmwareUpdate(). Negative clears it. Ignored in OCPP 1.6
+     */
+    void setRequestId(int requestId);
 
     Ocpp16::FirmwareStatus getFirmwareStatus();
 

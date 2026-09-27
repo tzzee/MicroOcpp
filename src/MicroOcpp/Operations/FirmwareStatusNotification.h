@@ -15,9 +15,14 @@ namespace Ocpp16 {
 class FirmwareStatusNotification : public Operation, public MemoryManaged {
 private:
     FirmwareStatus status = FirmwareStatus::Idle;
+    int requestId = -1;
     static const char *cstrFromFwStatus(FirmwareStatus status);
 public:
-    FirmwareStatusNotification(FirmwareStatus status);
+    /**
+     * @param requestId OCPP 2.0.1: requestId of the UpdateFirmwareRequest that started the update.
+     *                  Negative omits the field (OCPP 1.6, or no update has been requested)
+     */
+    FirmwareStatusNotification(FirmwareStatus status, int requestId = -1);
 
     const char* getOperationType() override {return "FirmwareStatusNotification"; }
 

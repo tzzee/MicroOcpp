@@ -33,7 +33,24 @@ FirmwareService::FirmwareService(Context& context) : MemoryManaged("v16.Firmware
 
     //Register message handler for TriggerMessage operation
     context.getOperationRegistry().registerOperation("FirmwareStatusNotification", [this] () {
-        return new Ocpp16::FirmwareStatusNotification(getFirmwareStatus());});
+        return new Ocpp16::FirmwareStatusNotification(getFirmwareStatus(), getNotificationRequestId());});
+
+    requestIdInt = declareConfiguration<int>("MO_FwUpdateRequestId", -1, MO_KEYVALUE_FN, false, false, false);
+}
+
+void FirmwareService::setRequestId(int requestId) {
+    if (!requestIdInt) {
+        return;
+    }
+    requestIdInt->setInt(requestId < 0 ? -1 : requestId);
+    configuration_save();
+}
+
+int FirmwareService::getNotificationRequestId() {
+    if (context.getModel().getVersion().major != 2 || !requestIdInt) {
+        return -1; //OCPP 1.6 has no requestId
+    }
+    return requestIdInt->getInt();
 }
 
 void FirmwareService::setBuildNumber(const char *buildNumber) {
@@ -292,7 +309,7 @@ std::unique_ptr<Request> FirmwareService::getFirmwareStatusNotification() {
             buildNumber.clear();
 
             lastReportedStatus = FirmwareStatus::Installed;
-            auto fwNotificationMsg = new Ocpp16::FirmwareStatusNotification(lastReportedStatus);
+            auto fwNotificationMsg = new Ocpp16::FirmwareStatusNotification(lastReportedStatus, getNotificationRequestId());
             auto fwNotification = makeRequest(fwNotificationMsg);
             return fwNotification;
         }
@@ -301,7 +318,7 @@ std::unique_ptr<Request> FirmwareService::getFirmwareStatusNotification() {
     if (getFirmwareStatus() != lastReportedStatus) {
         lastReportedStatus = getFirmwareStatus();
         if (lastReportedStatus != FirmwareStatus::Idle) {
-            auto fwNotificationMsg = new Ocpp16::FirmwareStatusNotification(lastReportedStatus);
+            auto fwNotificationMsg = new Ocpp16::FirmwareStatusNotification(lastReportedStatus, getNotificationRequestId());
             auto fwNotification = makeRequest(fwNotificationMsg);
             return fwNotification;
         }

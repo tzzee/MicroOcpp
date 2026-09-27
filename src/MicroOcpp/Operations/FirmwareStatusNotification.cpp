@@ -10,7 +10,7 @@
 using MicroOcpp::Ocpp16::FirmwareStatusNotification;
 using MicroOcpp::JsonDoc;
 
-FirmwareStatusNotification::FirmwareStatusNotification(FirmwareStatus status) : MemoryManaged("v16.Operation.", "FirmwareStatusNotification"), status{status} {
+FirmwareStatusNotification::FirmwareStatusNotification(FirmwareStatus status, int requestId) : MemoryManaged("v16.Operation.", "FirmwareStatusNotification"), status{status}, requestId{requestId} {
 
 }
 
@@ -42,9 +42,13 @@ const char *FirmwareStatusNotification::cstrFromFwStatus(FirmwareStatus status) 
 }
 
 std::unique_ptr<JsonDoc> FirmwareStatusNotification::createReq() {
-    auto doc = makeJsonDoc(getMemoryTag(), JSON_OBJECT_SIZE(1));
+    auto doc = makeJsonDoc(getMemoryTag(), JSON_OBJECT_SIZE(2));
     JsonObject payload = doc->to<JsonObject>();
     payload["status"] = cstrFromFwStatus(status);
+    if (requestId >= 0) {
+        //OCPP 2.0.1: mandatory unless triggered by TriggerMessage while no update is ongoing
+        payload["requestId"] = requestId;
+    }
     return doc;
 }
 
