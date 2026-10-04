@@ -28,6 +28,15 @@
 #endif
 
 using namespace MicroOcpp;
+
+namespace {
+//an inactive tx with no pending events that is not the current tx can never send anything again. This happens when its
+//file was rewritten by two tasks at once and the kept content lacks the "stopped" flag. Without collecting / deleting it,
+//it blocks the TransactionEvent queue forever and the tx record fills up ("transaction queue full")
+bool isOrphanTransaction(const MicroOcpp::Ocpp201::Transaction *tx, const MicroOcpp::Ocpp201::Transaction *current) {
+    return tx && tx != current && !tx->active && tx->started && !tx->stopped && tx->seqNos.empty();
+}
+} //namespace
 using namespace MicroOcpp::Ocpp201;
 
 TransactionService::Evse::Evse(Context& context, TransactionService& txService, Ocpp201::TransactionStoreEvse& txStore, unsigned int evseId) :
@@ -145,7 +154,11 @@ bool TransactionService::Evse::beginTransaction() {
             }
 
             //oldest entry, now check if it's history and can be removed or corrupted entry
-            if (!txhist || (txhist->stopped && txhist->seqNos.empty()) || (!txhist->active && !txhist->started) || (txhist->silent && txhist->stopped)) {
+            if (isOrphanTransaction(txhist, transaction.get())) {
+                MO_DBG_WARN("delete orphan tx history entry %u (inactive, no pending events, not stopped)", txl);
+            }
+            if (!txhist || (txhist->stopped && txhist->seqNos.empty()) || (!txhist->active && !txhist->started) || (txhist->silent && txhist->stopped) ||
+                    isOrphanTransaction(txhist, transaction.get())) {
                 //yes, remove
 
                 if (txStore.remove(txl)) {
@@ -883,7 +896,12 @@ unsigned int TransactionService::Evse::getFrontRequestOpNr() {
             }
         }
 
-        if (!txFront || (txFront && ((!txFront->active && !txFront->started) || (txFront->stopped && txFront->seqNos.empty()) || txFront->silent))) {
+        const bool orphan = isOrphanTransaction(txFront, transaction.get());
+        if (orphan) {
+            MO_DBG_WARN("collect orphan transaction %u-%u (inactive, no pending events, not stopped)", evseId, txFront->txNr);
+        }
+
+        if (!txFront || (txFront && ((!txFront->active && !txFront->started) || (txFront->stopped && txFront->seqNos.empty()) || txFront->silent || orphan))) {
             //advance front
             MO_DBG_DEBUG("collect front transaction %u-%u", evseId, txNrFront);
             txEventFront = nullptr;

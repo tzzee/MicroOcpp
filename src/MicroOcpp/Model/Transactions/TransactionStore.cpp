@@ -869,12 +869,21 @@ std::unique_ptr<TransactionEventData> TransactionStoreEvse::loadTransactionEvent
     auto doc = FilesystemUtils::loadJson(filesystem, fn, getMemoryTag());
 
     if (!doc) {
-        MO_DBG_ERR("memory corruption");
+        //the file exists but cannot be parsed (e.g. power loss or reset while writing). It will never become
+        //readable, and the TransactionEvent queue retries the front event forever, blocking all later events.
+        //Discard it like a too-small file is collected, so that the next event can be sent
+        MO_DBG_ERR("corrupted txEvent %u-%u-%u, discard", evseId, tx.txNr, seqNo);
+        remove(tx, seqNo);
         return nullptr;
     }
 
     if (!doc->containsKey("txEvent")) {
-        MO_DBG_DEBUG("%u-%u-%u does not contain txEvent", evseId, tx.txNr, seqNo);
+        //seqNos lists this file as a pending event, but it has no txEvent. This happens when two tasks rewrote the
+        //file at the same time and a shorter content left the tail of a longer one: ArduinoJson parses the first
+        //complete object and ignores the rest, so the event is lost. Keeping it would block the TransactionEvent
+        //queue forever (front event never loads), so discard it like an unparseable file
+        MO_DBG_ERR("txEvent %u-%u-%u missing (corrupted file), discard", evseId, tx.txNr, seqNo);
+        remove(tx, seqNo);
         return nullptr;
     }
 
