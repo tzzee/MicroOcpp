@@ -187,7 +187,8 @@ bool TransactionService::Evse::beginTransaction() {
 
     if (!tx) {
         //couldn't create normal transaction -> check if to start charging without real transaction
-        if (txService.silentOfflineTransactionsBool && txService.silentOfflineTransactionsBool->getBool()) {
+        if (txService.localOnlyTransactions ||
+                (txService.silentOfflineTransactionsBool && txService.silentOfflineTransactionsBool->getBool())) {
             //try to handle charging session without sending StartTx or StopTx to the server
             tx = txStore.createTransaction(txNrEnd, txId);
 
@@ -201,6 +202,13 @@ bool TransactionService::Evse::beginTransaction() {
     if (!tx) {
         MO_DBG_ERR("transaction queue full");
         return false;
+    }
+
+    if (txService.localOnlyTransactions && !tx->silent) {
+        //no CSMS configured: the tx is never sent, mark it silent before the first commit so that it is collected
+        //even after a power loss during charging
+        tx->silent = true;
+        MO_DBG_DEBUG("created silent transaction (local only)");
     }
 
     tx->beginTimestamp = context.getModel().getClock().now();

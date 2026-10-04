@@ -151,6 +151,7 @@ private:
     Variable *messageAttemptsTransactionEventInt = nullptr;
     Variable *messageAttemptIntervalTransactionEventInt = nullptr;
     Variable *silentOfflineTransactionsBool = nullptr;
+    bool localOnlyTransactions = false; //no CSMS configured: every new tx is silent (never sent, not kept)
     uint16_t trackTxStartPoint = -1;
     uint16_t trackTxStopPoint = -1;
     Vector<TxStartStopPoint> txStartPointParsed;
@@ -164,6 +165,14 @@ public:
     void loop();
 
     Evse *getEvse(unsigned int evseId);
+
+    /*
+     * Set when no CSMS is configured (local operation with the local authorization list). New transactions are then
+     * created silent: their TransactionEvents can never be delivered, so keeping them would fill the tx record
+     * (MO_TXRECORD_SIZE_V201) and later transactions could not start anymore
+     */
+    void setLocalOnlyTransactions(bool enable) {localOnlyTransactions = enable;}
+    bool isLocalOnlyTransactions() const {return localOnlyTransactions;}
 
     bool parseTxStartStopPoint(const char *src, Vector<TxStartStopPoint>& dst);
 };
