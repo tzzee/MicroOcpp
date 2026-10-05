@@ -66,6 +66,9 @@ public:
 
         std::unique_ptr<Ocpp201::MeterValue> mvClockAligned; //clock-aligned sample waiting to be sent in a TransactionEvent
 
+        //forget txFront if it is the tx with this txNr (called before that tx record is removed from the store)
+        void dropFrontCacheIfTxNr(unsigned int txNr);
+
     public:
         Evse(Context& context, TransactionService& txService, Ocpp201::TransactionStoreEvse& txStore, unsigned int evseId);
         virtual ~Evse();

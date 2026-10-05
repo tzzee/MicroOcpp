@@ -104,6 +104,9 @@ bool TransactionService::Evse::beginTransaction() {
         //check if dangling silent tx, aborted tx, or corrupted entry (txhist == null)
         if (!txhist || txhist->silent || (!txhist->active && !txhist->started && MO_TX_CLEAN_ABORTED)) {
             //yes, remove
+            //the front cache must not keep pointing to the removed tx: its txNr is reused for the new tx right below,
+            //and advancing past the stale (silent) front would also skip the new tx, which is then never sent
+            dropFrontCacheIfTxNr(txr);
             if (txStore.remove(txr)) {
                 if (txNrFront == txNrEnd) {
                     txNrFront = txr;
@@ -160,6 +163,7 @@ bool TransactionService::Evse::beginTransaction() {
             if (!txhist || (txhist->stopped && txhist->seqNos.empty()) || (!txhist->active && !txhist->started) || (txhist->silent && txhist->stopped) ||
                     isOrphanTransaction(txhist, transaction.get())) {
                 //yes, remove
+                dropFrontCacheIfTxNr(txl);
 
                 if (txStore.remove(txl)) {
                     txNrBegin = (txl + 1) % MAX_TX_CNT;
@@ -865,6 +869,16 @@ bool TransactionService::Evse::ocppPermitsCharge() {
            transaction->isAuthorizationActive &&
            transaction->isAuthorized &&
            !transaction->isDeauthorized;
+}
+
+void TransactionService::Evse::dropFrontCacheIfTxNr(unsigned int txNr) {
+    if (txFront && txFront->txNr == txNr) {
+        MO_DBG_DEBUG("drop front cache of removed tx %u-%u", evseId, txNr);
+        txEventFront = nullptr;
+        txEventFrontIsRequested = false;
+        txFrontCache = nullptr;
+        txFront = nullptr;
+    }
 }
 
 unsigned int TransactionService::Evse::getFrontRequestOpNr() {
