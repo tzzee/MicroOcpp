@@ -49,6 +49,11 @@ Connection *connection {nullptr};
 Context *context {nullptr};
 std::shared_ptr<FilesystemAdapter> filesystem;
 
+#if MO_ENABLE_V201
+void (*onVariableServiceCreated)(VariableService&, void*) {nullptr};
+void *onVariableServiceCreatedUserData {nullptr};
+#endif
+
 #ifndef MO_NUMCONNECTORS
 #define MO_NUMCONNECTORS 2
 #endif
@@ -290,6 +295,10 @@ void mocpp_initialize(Connection& connection, const char *bootNotificationCreden
             new AvailabilityService(*context, MO_NUM_EVSEID)));
         model.setVariableService(std::unique_ptr<VariableService>(
             new VariableService(*context, filesystem)));
+        if (onVariableServiceCreated) {
+            //let the integration register its variables before the services below declare theirs
+            onVariableServiceCreated(*model.getVariableService(), onVariableServiceCreatedUserData);
+        }
         model.setTransactionService(std::unique_ptr<TransactionService>(
             new TransactionService(*context, filesystem, MO_NUM_EVSEID)));
         model.setRemoteControlService(std::unique_ptr<RemoteControlService>(
@@ -379,6 +388,13 @@ void mocpp_initialize(Connection& connection, const char *bootNotificationCreden
 
     MO_DBG_INFO("initialized MicroOcpp v" MO_VERSION " running OCPP %i.%i.%i", version.major, version.minor, version.patch);
 }
+
+#if MO_ENABLE_V201
+void mocpp_set_on_variable_service_created(void (*hook)(MicroOcpp::VariableService& variableService, void *userData), void *userData) {
+    onVariableServiceCreated = hook;
+    onVariableServiceCreatedUserData = userData;
+}
+#endif //MO_ENABLE_V201
 
 void mocpp_deinitialize() {
 

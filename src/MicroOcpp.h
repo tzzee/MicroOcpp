@@ -114,6 +114,23 @@ void mocpp_initialize(
             bool autoRecover = false, //automatically sanitize the local data store when the lib detects recurring crashes. Not recommended during development
             MicroOcpp::ProtocolVersion version = MicroOcpp::ProtocolVersion(1,6));
 
+#if MO_ENABLE_V201
+namespace MicroOcpp {
+class VariableService;
+}
+
+/*
+ * Register a hook which mocpp_initialize() calls right after it creates the VariableService (OCPP 2.0.1),
+ * before the other 2.0.1 services (TransactionService, ...) declare their variables.
+ *
+ * The services take a variable which already exists instead of declaring their own one. Use this hook to
+ * register variables which should replace the library defaults (e.g. SampledDataCtrlr.TxUpdatedInterval).
+ * A variable registered after mocpp_initialize() cannot replace them, because the services have already
+ * declared and cached their own variables by then. Pass nullptr to remove the hook.
+ */
+void mocpp_set_on_variable_service_created(void (*hook)(MicroOcpp::VariableService& variableService, void *userData), void *userData);
+#endif //MO_ENABLE_V201
+
 /*
  * Stop the OCPP library and release allocated resources.
  */
