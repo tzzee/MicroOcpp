@@ -7,6 +7,7 @@
 #if MO_ENABLE_V201
 
 #include <MicroOcpp/Model/Transactions/TransactionService.h>
+#include <MicroOcpp/Model/Availability/AvailabilityService.h>
 
 #include <string.h>
 
@@ -679,6 +680,18 @@ bool TransactionService::Evse::beginAuthorization(IdToken idToken, bool validate
     if (transaction && transaction->isAuthorizationActive) {
         MO_DBG_WARN("tx process still running. Please call endTransaction(...) before");
         return false;
+    }
+
+    //An EVSE which the CSMS has set Inoperative does not start a new transaction (F01, G03). All 2.0.1 starts
+    //(RequestStartTransaction, local authorization) come here, so refuse them in this one place. isAvailable() stays
+    //true while a started transaction is running, so ChangeAvailability during a transaction applies after it
+    if (auto availabilityService = context.getModel().getAvailabilityService()) {
+        if (auto availabilityEvse = availabilityService->getEvse(evseId)) {
+            if (!availabilityEvse->isAvailable()) {
+                MO_DBG_WARN("EVSE %u is not available, transaction not started", evseId);
+                return false;
+            }
+        }
     }
 
     if (!transaction) {
