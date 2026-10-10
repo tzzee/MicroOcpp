@@ -550,6 +550,9 @@ void TransactionService::Evse::loop() {
 
     if (txEvent) {
         txEvent->timestamp = context.getModel().getClock().now();
+        //E04: a TransactionEvent which happens while the Charging Station is offline is sent later with offline=true.
+        //All new events of this EVSE are created above and pass here, so mark them at the time they happen
+        txEvent->offline = !context.getConnection().isConnected();
         if (transaction->notifyChargingState) {
             txEvent->chargingState = chargingState;
             transaction->notifyChargingState = false;
