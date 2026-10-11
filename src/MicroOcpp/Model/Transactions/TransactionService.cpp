@@ -684,11 +684,17 @@ bool TransactionService::Evse::beginAuthorization(IdToken idToken, bool validate
 
     //An EVSE which the CSMS has set Inoperative does not start a new transaction (F01, G03). All 2.0.1 starts
     //(RequestStartTransaction, local authorization) come here, so refuse them in this one place. isAvailable() stays
-    //true while a started transaction is running, so ChangeAvailability during a transaction applies after it
+    //true while a started transaction is running, so ChangeAvailability during a transaction applies after it.
+    //A faulted EVSE does not start either, the same as 1.6 (Connector::beginTransaction). Otherwise the transaction
+    //stays open without supply until the fault clears
     if (auto availabilityService = context.getModel().getAvailabilityService()) {
         if (auto availabilityEvse = availabilityService->getEvse(evseId)) {
             if (!availabilityEvse->isAvailable()) {
                 MO_DBG_WARN("EVSE %u is not available, transaction not started", evseId);
+                return false;
+            }
+            if (availabilityEvse->isFaulted()) {
+                MO_DBG_WARN("EVSE %u is faulted, transaction not started", evseId);
                 return false;
             }
         }

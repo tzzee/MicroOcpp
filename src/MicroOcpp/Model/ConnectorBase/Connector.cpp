@@ -678,6 +678,14 @@ std::shared_ptr<Transaction> Connector::beginTransaction(const char *idTag) {
         return nullptr;
     }
 
+    //A connector which is faulted or set Inoperative by the CSMS does not start a new transaction. Before, the
+    //transaction was created and waited for isOperative() before StartTransaction, so a start from the local side
+    //(NFC, ECHONET Lite, plug and charge) was kept open, while RemoteStartTransaction was rejected
+    if (!isOperative()) {
+        MO_DBG_WARN("connector %u is not operative, transaction not started", connectorId);
+        return nullptr;
+    }
+
     MO_DBG_DEBUG("Begin transaction process (%s), prepare", idTag != nullptr ? idTag : "");
     
     bool localAuthFound = false;
@@ -901,6 +909,14 @@ std::shared_ptr<Transaction> Connector::beginTransaction_authorized(const char *
     
     if (transaction) {
         MO_DBG_WARN("tx process still running. Please call endTransaction(...) before");
+        return nullptr;
+    }
+
+    //A connector which is faulted or set Inoperative by the CSMS does not start a new transaction. Before, the
+    //transaction was created and waited for isOperative() before StartTransaction, so a start from the local side
+    //(NFC, ECHONET Lite, plug and charge) was kept open, while RemoteStartTransaction was rejected
+    if (!isOperative()) {
+        MO_DBG_WARN("connector %u is not operative, transaction not started", connectorId);
         return nullptr;
     }
 
