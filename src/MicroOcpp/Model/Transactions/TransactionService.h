@@ -84,7 +84,8 @@ public:
         /**
          * @brief Whether an earlier transaction still has TransactionEvents to send (e.g. its Ended event
          *        is not confirmed by the server yet).
-         * @details The current transaction does not count. Used to hold the next transaction until the
+         * @details The running (active) transaction does not count. A transaction which has just ended counts until
+         *          its events are sent, even while it is still held as the current transaction. Used to hold the next transaction until the
          *          previous one is settled with the server.
          */
         bool hasEarlierTransactionQueued();

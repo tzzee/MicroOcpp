@@ -687,7 +687,9 @@ bool TransactionService::Evse::hasEarlierTransactionQueued() {
     if (!txFront) {
         return false;
     }
-    return !transaction || txFront->txNr != transaction->txNr;
+    //Only the events of the running transaction do not count. Right after a transaction ends, it is still
+    //held as `transaction` (not active) until the next one begins, so its unsent Ended event counts
+    return !(transaction && transaction->active && txFront->txNr == transaction->txNr);
 }
 
 bool TransactionService::Evse::beginAuthorization(IdToken idToken, bool validateIdToken) {
