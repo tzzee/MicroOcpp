@@ -674,6 +674,22 @@ void TransactionService::Evse::setEvseReadyInput(std::function<bool()> connector
     this->evseReadyInput = connectorEnergized;
 }
 
+void TransactionService::Evse::setStartTxReadyInput(std::function<bool()> startTxReady) {
+    this->startTxReadyInput = startTxReady;
+}
+
+void TransactionService::Evse::setStopTxReadyInput(std::function<bool()> stopTxReady) {
+    this->stopTxReadyInput = stopTxReady;
+}
+
+bool TransactionService::Evse::hasEarlierTransactionQueued() {
+    getFrontRequestOpNr(); //advances the front past the transactions whose events are all sent
+    if (!txFront) {
+        return false;
+    }
+    return !transaction || txFront->txNr != transaction->txNr;
+}
+
 bool TransactionService::Evse::beginAuthorization(IdToken idToken, bool validateIdToken) {
     MO_DBG_DEBUG("begin auth: %s", idToken.get());
 

@@ -78,6 +78,16 @@ public:
         void setConnectorPluggedInput(std::function<bool()> connectorPlugged);
         void setEvReadyInput(std::function<bool()> evRequestsEnergy);
         void setEvseReadyInput(std::function<bool()> connectorEnergized);
+        void setStartTxReadyInput(std::function<bool()> startTxReady); //the Started event is delayed while this Input is false
+        void setStopTxReadyInput(std::function<bool()> stopTxReady); //the Ended event is delayed while this Input is false
+
+        /**
+         * @brief Whether an earlier transaction still has TransactionEvents to send (e.g. its Ended event
+         *        is not confirmed by the server yet).
+         * @details The current transaction does not count. Used to hold the next transaction until the
+         *          previous one is settled with the server.
+         */
+        bool hasEarlierTransactionQueued();
 
         bool beginAuthorization(IdToken idToken, bool validateIdToken = true); // authorize by swipe RFID
         bool endAuthorization(IdToken idToken = IdToken(), bool validateIdToken = false); // stop authorization by swipe RFID
