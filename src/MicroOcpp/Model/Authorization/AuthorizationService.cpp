@@ -65,7 +65,8 @@ bool AuthorizationService::loadLists() {
     JsonObject root = doc->as<JsonObject>();
 
     int listVersion = root["listVersion"] | 0;
-    
+
+    localListUpdateCount++;
     if (!localAuthorizationList.readJson(root["localAuthorizationList"].as<JsonArray>(), listVersion, false, true)) {
         MO_DBG_ERR("list read failure");
         return false;
@@ -101,7 +102,16 @@ size_t AuthorizationService::getLocalListSize() {
     return localAuthorizationList.size();
 }
 
+void AuthorizationService::forEachLocalAuthorization(std::function<void(const AuthorizationData&)> visitor) {
+    localAuthorizationList.forEach(visitor);
+}
+
+uint32_t AuthorizationService::getLocalListUpdateCount() {
+    return localListUpdateCount;
+}
+
 bool AuthorizationService::updateLocalList(JsonArray localAuthorizationListJson, int listVersion, bool differential) {
+    localListUpdateCount++; //count failures too: a failed differential update may already have touched entries
     bool success = localAuthorizationList.readJson(localAuthorizationListJson, listVersion, differential, false);
 
     if (success) {

@@ -199,4 +199,13 @@ size_t AuthorizationList::size() {
     return localAuthorizationList.size();
 }
 
+void AuthorizationList::forEach(std::function<void(const AuthorizationData&)> visitor) {
+    if (!visitor) {
+        return;
+    }
+    for (const auto& entry : localAuthorizationList) {
+        visitor(entry);
+    }
+}
+
 #endif //MO_ENABLE_LOCAL_AUTH

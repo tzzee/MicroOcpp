@@ -12,6 +12,8 @@
 #include <MicroOcpp/Model/Authorization/AuthorizationData.h>
 #include <MicroOcpp/Core/Memory.h>
 
+#include <functional>
+
 #ifndef MO_LocalAuthListMaxLength
 #define MO_LocalAuthListMaxLength 48
 #endif
@@ -40,6 +42,8 @@ public:
 
     int getListVersion() {return listVersion;}
     size_t size(); //used in unit tests
+
+    void forEach(std::function<void(const AuthorizationData&)> visitor); //visits the entries in idTag order
 
 };
 
