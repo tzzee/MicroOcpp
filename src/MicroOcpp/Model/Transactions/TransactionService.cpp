@@ -695,6 +695,18 @@ bool TransactionService::Evse::hasEarlierTransactionQueued() {
 bool TransactionService::Evse::beginAuthorization(IdToken idToken, bool validateIdToken) {
     MO_DBG_DEBUG("begin auth: %s", idToken.get());
 
+    //A silent transaction which has ended creates no Ended event, so loop() never marks it stopped and keeps holding
+    //it (with its authorization still active) until the next transaction begins. Release it here, the same as
+    //loop() does for stopped ones, so that it does not block the next authorization (beginTransaction() also
+    //removes such dangling silent records from the store)
+    if (transaction && transaction->silent && !transaction->active) {
+        MO_DBG_DEBUG("release ended silent transaction %u-%s", evseId, transaction->transactionId);
+        if (txFront == transaction.get()) {
+            txFrontCache = std::move(transaction);
+        }
+        transaction = nullptr;
+    }
+
     if (transaction && transaction->isAuthorizationActive) {
         MO_DBG_WARN("tx process still running. Please call endTransaction(...) before");
         return false;
