@@ -700,6 +700,8 @@ bool TransactionService::Evse::beginAuthorization(IdToken idToken, bool validate
         return false;
     }
 
+    //Last guard with the same conditions as the app's start table (Noex ChargeStartPolicy). The 2.0.1 remote start
+    //does not go through that table, so this is its only start check.
     //An EVSE which the CSMS has set Inoperative does not start a new transaction (F01, G03). All 2.0.1 starts
     //(RequestStartTransaction, local authorization) come here, so refuse them in this one place. isAvailable() stays
     //true while a started transaction is running, so ChangeAvailability during a transaction applies after it.

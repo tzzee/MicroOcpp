@@ -678,6 +678,7 @@ std::shared_ptr<Transaction> Connector::beginTransaction(const char *idTag) {
         return nullptr;
     }
 
+    //Last guard with the same conditions as the app's start table (Noex ChargeStartPolicy).
     //A connector which is faulted or set Inoperative by the CSMS does not start a new transaction. Before, the
     //transaction was created and waited for isOperative() before StartTransaction, so a start from the local side
     //(NFC, ECHONET Lite, plug and charge) was kept open, while RemoteStartTransaction was rejected
@@ -912,6 +913,7 @@ std::shared_ptr<Transaction> Connector::beginTransaction_authorized(const char *
         return nullptr;
     }
 
+    //Last guard with the same conditions as the app's start table (Noex ChargeStartPolicy).
     //A connector which is faulted or set Inoperative by the CSMS does not start a new transaction. Before, the
     //transaction was created and waited for isOperative() before StartTransaction, so a start from the local side
     //(NFC, ECHONET Lite, plug and charge) was kept open, while RemoteStartTransaction was rejected
