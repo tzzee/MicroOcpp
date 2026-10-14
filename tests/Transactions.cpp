@@ -192,6 +192,65 @@ TEST_CASE( "Transactions" ) {
 
     }
 
+    SECTION("UC E02 - TxStartPoint EVConnected") {
+
+        //scenario preparation
+
+        REQUIRE( context->getModel().getTransactionService()->getEvse(1)->getTransaction() == nullptr );
+
+        getOcppContext()->getModel().getVariableService()->declareVariable<const char*>("TxCtrlr", "TxStartPoint", "")->setString("EVConnected");
+        getOcppContext()->getModel().getVariableService()->declareVariable<const char*>("TxCtrlr", "TxStopPoint", "")->setString("PowerPathClosed");
+
+        setConnectorPluggedInput([] () {return false;});
+        loop();
+        REQUIRE( context->getModel().getTransactionService()->getEvse(1)->getTransaction() == nullptr );
+
+        //plugging in starts the tx without authorization
+        setConnectorPluggedInput([] () {return true;});
+        loop();
+        REQUIRE( context->getModel().getTransactionService()->getEvse(1)->getTransaction() != nullptr );
+        REQUIRE( context->getModel().getTransactionService()->getEvse(1)->getTransaction()->started );
+        REQUIRE( !context->getModel().getTransactionService()->getEvse(1)->getTransaction()->stopped );
+
+        //the unauthorized tx keeps running (not stopped for lacking an authorization)
+        loop();
+        REQUIRE( !context->getModel().getTransactionService()->getEvse(1)->getTransaction()->stopped );
+
+        //authorization joins the running tx
+        context->getModel().getTransactionService()->getEvse(1)->beginAuthorization("mIdToken");
+        loop();
+        REQUIRE( context->getModel().getTransactionService()->getEvse(1)->getTransaction()->isAuthorized );
+        REQUIRE( !context->getModel().getTransactionService()->getEvse(1)->getTransaction()->stopped );
+
+        //revoking the authorization stops the tx (TxStopPoint PowerPathClosed)
+        context->getModel().getTransactionService()->getEvse(1)->endAuthorization("mIdToken");
+        loop();
+        REQUIRE( (context->getModel().getTransactionService()->getEvse(1)->getTransaction() == nullptr ||
+                  context->getModel().getTransactionService()->getEvse(1)->getTransaction()->stopped) );
+
+        //staying plugged in does not start the next tx
+        loop();
+        REQUIRE( (context->getModel().getTransactionService()->getEvse(1)->getTransaction() == nullptr ||
+                  context->getModel().getTransactionService()->getEvse(1)->getTransaction()->stopped) );
+
+        //unplugging and plugging in again starts the next tx
+        setConnectorPluggedInput([] () {return false;});
+        loop();
+        REQUIRE( context->getModel().getTransactionService()->getEvse(1)->getTransaction() == nullptr );
+        setConnectorPluggedInput([] () {return true;});
+        loop();
+        REQUIRE( context->getModel().getTransactionService()->getEvse(1)->getTransaction() != nullptr );
+        REQUIRE( context->getModel().getTransactionService()->getEvse(1)->getTransaction()->started );
+
+        //unplugging stops it (TxStopPoint PowerPathClosed)
+        setConnectorPluggedInput([] () {return false;});
+        loop();
+        REQUIRE( context->getModel().getTransactionService()->getEvse(1)->getTransaction() == nullptr );
+
+        getOcppContext()->getModel().getVariableService()->declareVariable<const char*>("TxCtrlr", "TxStartPoint", "")->setString("PowerPathClosed");
+        loop();
+    }
+
     SECTION("UC G01") {
 
         setConnectorPluggedInput([] () {return false;});

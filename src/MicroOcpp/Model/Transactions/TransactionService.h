@@ -46,6 +46,11 @@ public:
         Ocpp201::TransactionEventData::ChargingState trackChargingState = Ocpp201::TransactionEventData::ChargingState::UNDEFINED;
 
         std::function<bool()> connectorPluggedInput;
+        //TxStartPoint=EVConnected starts a tx when the cable is plugged in, not while it stays plugged. Set when the
+        //cable is seen unplugged (and at boot, so a cable plugged in before boot starts a tx), cleared when the
+        //EVConnected start begins a tx. Otherwise a tx stopped while still plugged in (e.g. authorization revoked)
+        //was started again in the next loop
+        bool evConnectedStartArmed = true;
         std::function<bool()> evReadyInput;
         std::function<bool()> evseReadyInput;
 

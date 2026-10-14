@@ -325,8 +325,11 @@ void TransactionService::Evse::loop() {
             stoppedReason = Ocpp201::Transaction::StoppedReason::EVDisconnected;
         } else if ((txService.isTxStopPoint(TxStartStopPoint::Authorized) ||
                     txService.isTxStopPoint(TxStartStopPoint::PowerPathClosed)) &&
-                    (!transaction || !transaction->isAuthorizationActive)) {
+                    transaction && transaction->isAuthorized && !transaction->isAuthorizationActive) {
             // user revoked authorization (or EV or any "local" entity)
+            //Only a granted authorization which was revoked stops the tx. Without a tx, this condition used to be
+            //true and skipped the start check below, so TxStartPoint=EVConnected never started a tx on plug-in.
+            //A tx started by EVConnected before any authorization is not stopped for lacking one (E02)
             txStopCondition = true;
             triggerReason = TransactionEventTriggerReason::StopAuthorized;
             stoppedReason = Ocpp201::Transaction::StoppedReason::Local;
@@ -406,7 +409,7 @@ void TransactionService::Evse::loop() {
                 triggerReason = TransactionEventTriggerReason::Authorized;
             }
         } else if (txService.isTxStartPoint(TxStartStopPoint::EVConnected) &&
-                    connectorPluggedInput && connectorPluggedInput()) {
+                    connectorPluggedInput && connectorPluggedInput() && evConnectedStartArmed) {
             txStartCondition = true;
             triggerReason = TransactionEventTriggerReason::CablePluggedIn;
         } else if (txService.isTxStartPoint(TxStartStopPoint::EnergyTransfer) &&
@@ -441,7 +444,14 @@ void TransactionService::Evse::loop() {
 
             txEvent->eventType = TransactionEventData::Type::Started;
             txEvent->triggerReason = triggerReason;
+            if (triggerReason == TransactionEventTriggerReason::CablePluggedIn) {
+                evConnectedStartArmed = false; //next EVConnected start needs the cable to be unplugged first
+            }
         }
+    }
+
+    if (connectorPluggedInput && !connectorPluggedInput()) {
+        evConnectedStartArmed = true;
     }
 
     TransactionEventData::ChargingState chargingState = TransactionEventData::ChargingState::Idle;
