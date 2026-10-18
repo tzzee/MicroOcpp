@@ -88,15 +88,19 @@ int ocpp_cert_hex_to_bytes(unsigned char *dst, size_t dst_size, const char *hex_
         return -1;
     }
 
+    // 奇数桁(serialNumber は頭の 0 を落とすので奇数桁がありうる)は頭に 0 を補い、2 バイト目からは 1 文字ずらして読む
+    // (ずらさずに読むと最後に終端の文字まで読んで失敗し、DeleteCertificate が FormationViolation になっていた)
+    const size_t odd = hex_len % 2;
+
     for (size_t i = 0; i < write_len; i++) {
         char octet [2];
 
-        if (i == 0 && hex_len % 2) {
+        if (i == 0 && odd) {
             octet[0] = '0';
-            octet[1] = hex_src[2*i];
+            octet[1] = hex_src[0];
         } else {
-            octet[0] = hex_src[2*i];
-            octet[1] = hex_src[2*i + 1];
+            octet[0] = hex_src[2*i - odd];
+            octet[1] = hex_src[2*i - odd + 1];
         }
 
         unsigned char val = 0;
