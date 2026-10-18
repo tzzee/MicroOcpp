@@ -257,20 +257,21 @@ TEST_CASE( "M - Certificates" ) {
 
 TEST_CASE( "M - Certificates hex serialNumber" ) {
     // serialNumber は頭の 0 を落とすので奇数桁がありうる。奇数桁でも 1 文字ずれずに読めること(DeleteCertificate の FormationViolation)
-    unsigned char buf [32];
-    REQUIRE( ocpp_cert_hex_to_bytes(buf, sizeof(buf), "ABC") == 2 );
-    REQUIRE( buf[0] == 0x0A );
-    REQUIRE( buf[1] == 0xBC );
-    REQUIRE( ocpp_cert_hex_to_bytes(buf, sizeof(buf), "6DA0ACA0C1232F2168689970A92F5EB2966C0B3") == 20 );
-    REQUIRE( buf[0] == 0x06 );
-    REQUIRE( buf[1] == 0xDA );
-    REQUIRE( buf[19] == 0xB3 );
-    REQUIRE( ocpp_cert_hex_to_bytes(buf, sizeof(buf), "3FAD") == 2 );
-    REQUIRE( buf[0] == 0x3F );
-    REQUIRE( buf[1] == 0xAD );
-    REQUIRE( ocpp_cert_hex_to_bytes(buf, sizeof(buf), "1") == 1 );
-    REQUIRE( buf[0] == 0x01 );
-    REQUIRE( ocpp_cert_hex_to_bytes(buf, sizeof(buf), "XY") == -1 );
+    ocpp_cert_hash hash;
+    REQUIRE( ocpp_cert_set_serialNumber(&hash, "ABC") >= 0 );
+    REQUIRE( hash.serialNumberLen == 2 );
+    REQUIRE( hash.serialNumber[0] == 0x0A );
+    REQUIRE( hash.serialNumber[1] == 0xBC );
+    REQUIRE( ocpp_cert_set_serialNumber(&hash, "6DA0ACA0C1232F2168689970A92F5EB2966C0B3") >= 0 );
+    REQUIRE( hash.serialNumberLen == 20 );
+    REQUIRE( hash.serialNumber[0] == 0x06 );
+    REQUIRE( hash.serialNumber[1] == 0xDA );
+    REQUIRE( hash.serialNumber[19] == 0xB3 );
+    REQUIRE( ocpp_cert_set_serialNumber(&hash, "3FAD") >= 0 );
+    REQUIRE( hash.serialNumberLen == 2 );
+    REQUIRE( hash.serialNumber[0] == 0x3F );
+    REQUIRE( hash.serialNumber[1] == 0xAD );
+    REQUIRE( ocpp_cert_set_serialNumber(&hash, "XY") < 0 );
 }
 
 #else
