@@ -53,6 +53,14 @@ std::unique_ptr<JsonDoc> TransactionEvent::createReq() {
 
     payload["eventType"] = serializeTransactionEventType(txEvent->eventType);
 
+    if (txEvent->timestamp < MIN_TIME &&
+            txEvent->bootNr == model.getBootNr() &&
+            model.getClock().now() >= MIN_TIME) {
+        //same as v16 StartTransaction: an event created before the clock was set in this power cycle gets its time now
+        MO_DBG_DEBUG("adjust preboot TransactionEvent timestamp");
+        txEvent->timestamp = model.getClock().adjustPrebootTimestamp(txEvent->timestamp);
+    }
+
     char timestamp [JSONDATE_LENGTH + 1];
     txEvent->timestamp.toJsonString(timestamp, JSONDATE_LENGTH + 1);
     payload["timestamp"] = timestamp;

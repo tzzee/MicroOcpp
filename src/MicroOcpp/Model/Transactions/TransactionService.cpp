@@ -561,6 +561,9 @@ void TransactionService::Evse::loop() {
 
     if (txEvent) {
         txEvent->timestamp = context.getModel().getClock().now();
+        //Record the boot number with the event. fetchFrontRequest() treats an event without valid time as unrecoverable
+        //only if it comes from another power cycle; without this, every pre-boot event (bootNr = 0) was discarded
+        txEvent->bootNr = context.getModel().getBootNr();
         //E04: a TransactionEvent which happens while the Charging Station is offline is sent later with offline=true.
         //All new events of this EVSE are created above and pass here, so mark them at the time they happen
         txEvent->offline = !context.getConnection().isConnected();
