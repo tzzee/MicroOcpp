@@ -91,6 +91,11 @@ Request::CreateRequestResult Request::createRequest(JsonDoc& requestJson) {
     if (!requestPayload) {
         return CreateRequestResult::Failure;
     }
+    if (requestPayload->overflowed()) {
+        // 見積もった容量が足りず、項目が黙って抜けた(JSON としては正しいがスキーマに合わない)。送るが、ログに残す
+        MO_DBG_ERR("request payload overflowed: %s capacity=%zu", operation->getOperationType(),
+                   requestPayload->capacity());
+    }
 
     /*
      * Create OCPP-J Remote Procedure Call header
@@ -102,6 +107,9 @@ Request::CreateRequestResult Request::createRequest(JsonDoc& requestJson) {
     requestJson.add(messageID);                      //Unique message ID
     requestJson.add(operation->getOperationType());  //Action
     requestJson.add(*requestPayload);                      //Payload
+    if (requestJson.overflowed()) {
+        MO_DBG_ERR("request overflowed: %s capacity=%zu", operation->getOperationType(), json_buffsize);
+    }
 
     if (MO_DBG_LEVEL >= MO_DL_DEBUG && mocpp_tick_ms() - debugRequest_start >= 10000) { //print contents on the console
         debugRequest_start = mocpp_tick_ms();

@@ -11,6 +11,8 @@
 #include <MicroOcpp/Model/Variables/Variable.h>
 #include <MicroOcpp/Debug.h>
 
+#include <string.h>
+
 using namespace MicroOcpp::Ocpp201;
 using MicroOcpp::JsonDoc;
 
@@ -43,6 +45,10 @@ std::unique_ptr<JsonDoc> NotifyReport::createReq() {
         capacity += JSON_OBJECT_SIZE(4); //total of 4 fields
         capacity += 2 * JSON_OBJECT_SIZE(2); //component composite
         capacity += JSON_OBJECT_SIZE(1); //variable composite
+        // component と variable の名前は (char*) で写しを取るので、その長さ(終端込み)も要る(2026-10-21 の点検で、
+        // 足りずに evse の付いた項目が続くと黙って抜けうると分かった)
+        capacity += strlen(variable->getComponentId().name) + 1;
+        capacity += strlen(variable->getName()) + 1;
 
         size_t nAttributes = 0;
         size_t valueCapacity = 0;
@@ -59,15 +65,15 @@ std::unique_ptr<JsonDoc> NotifyReport::createReq() {
                     if (ret < 0 || ret >= VALUE_BUFSIZE) {
                         continue;
                     }
-                    valueCapacity = (size_t) ret + 1;
+                    valueCapacity += (size_t) ret + 1;
                     break;
                 }
                 case Variable::InternalDataType::Bool:
                     // bool will be stored in zero-copy mode (string literal "true" or "false")
-                    valueCapacity = 0;
                     break;
                 case Variable::InternalDataType::String:
-                    valueCapacity = strlen(variable->getString()); // TODO limit by ReportingValueSize
+                    // (char*) で写しを取るので終端込み。属性ごとに足す
+                    valueCapacity += strlen(variable->getString()) + 1; // TODO limit by ReportingValueSize
                     break;
                 default:
                     MO_DBG_ERR("internal error");
@@ -75,6 +81,7 @@ std::unique_ptr<JsonDoc> NotifyReport::createReq() {
             }
         }
 
+        capacity += JSON_ARRAY_SIZE(nAttributes); //variableAttribute array
         capacity += nAttributes * JSON_OBJECT_SIZE(5); //variableAttribute composite
         capacity += valueCapacity; //variableAttribute value total size
 
