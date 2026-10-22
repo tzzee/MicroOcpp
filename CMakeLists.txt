@@ -151,6 +151,7 @@ set(MO_SRC_UNIT
     tests/Variables.cpp
     tests/Transactions.cpp
     tests/TransactionPreboot.cpp
+    tests/RemoteStartEvse.cpp
     tests/Certificates.cpp
     tests/FirmwareManagement.cpp
     tests/ChargePointError.cpp

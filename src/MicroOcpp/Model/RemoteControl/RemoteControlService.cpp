@@ -110,6 +110,23 @@ RequestStartStopStatus RemoteControlService::requestStartTransaction(unsigned in
         return RequestStartStopStatus_Rejected;
     }
     
+    //evseId is optional in RequestStartTransaction and leaves the choice to the charger. EVSE 0 is the whole station and
+    //never carries a transaction, so starting there accepted every remote start, even while EVSE 1 was charging for
+    //someone else (2026-10-22, j1772-arduino: Accepted during an ISO15118 transaction). Take the first EVSE which is not
+    //occupied (the same condition as beginAuthorization), or EVSE 1 so that a busy station is rejected with its tx
+    if (evseId == 0) {
+        evseId = 1;
+        for (unsigned int i = 1; i < MO_NUM_EVSEID; i++) {
+            auto candidate = txService->getEvse(i);
+            auto candidateTx = candidate ? candidate->getTransaction() : nullptr;
+            if (candidate && !(candidateTx && candidateTx->isAuthorizationActive && !(candidateTx->silent && !candidateTx->active))) {
+                evseId = i;
+                break;
+            }
+        }
+        MO_DBG_INFO("remote start without evseId: use EVSE %u", evseId);
+    }
+
     auto evse = txService->getEvse(evseId);
     if (!evse) {
         MO_DBG_ERR("EVSE not found");
