@@ -1026,37 +1026,20 @@ std::unique_ptr<Request> TransactionService::Evse::fetchFrontRequest() {
         return nullptr;
     }
 
-    if (txEventFront->seqNo == 0 &&
-            txEventFront->timestamp < MIN_TIME &&
-            txEventFront->bootNr != context.getModel().getBootNr()) {
-        //time not set, cannot be restored anymore -> invalid tx
-        MO_DBG_ERR("cannot recover tx from previous power cycle");
-
-        txFront->silent = true;
-        txFront->active = false;
-        txStore.commit(txFront);
-
-        //clean txEvents early
-        auto seqNos = txFront->seqNos;
-        for (size_t i = 0; i < seqNos.size(); i++) {
-            txStore.remove(*txFront, seqNos[i]);
-        }
-        //last remove should keep tx201 file with only tx record and without txEvent
-
-        //next getFrontRequestOpNr() call will collect txFront
+    // NOEX: 時刻が合う前に作り、合わないまま再起動をまたいだできごとを、上流は取引ごと silent にして捨てていた
+    // (seqNo 0 のとき)。課金の値が CSMS に届かなくなるので捨てない(髙橋 2026-10-24「6A 以外はどのケースも抜けては
+    // いけない」)。時刻が合うまでは送らずに待ち、合ったら TransactionEvent が分からない時刻を今の時刻に置き換えて送る
+    if (txEventFront->timestamp < MIN_TIME && context.getModel().getClock().now() < MIN_TIME) {
         return nullptr;
     }
 
-    if ((int)txEventFront->attemptNr >= txService.messageAttemptsTransactionEventInt->getInt()) {
-        MO_DBG_WARN("exceeded TransactionMessageAttempts. Discard txEvent");
-
-        txStore.remove(*txFront, txEventFront->seqNo);
-        txEventFront = nullptr;
-        return nullptr;
-    }
-
+    // NOEX: MessageAttempts を超えても捨てない(上流は捨てる)。捨てると CSMS に課金の値が届かない(髙橋 2026-10-24
+    // 「6A 以外はどのケースも抜けてはいけない」)。CSMS が CALLERROR で断り続けても送り直し、後ろの取引は列で待つ
+    // (Noex_Ocpp の精算待ちが 60 秒ごとに警告を出すので遠隔で気づける)。送り直しの間隔は試行 × MessageAttemptInterval で、
+    // 10 回分で頭打ちにする
     Timestamp nextAttempt = txEventFront->attemptTime +
-                            txEventFront->attemptNr * std::max(0, txService.messageAttemptIntervalTransactionEventInt->getInt());
+                            (int)std::min(txEventFront->attemptNr, 10u) *
+                                    std::max(0, txService.messageAttemptIntervalTransactionEventInt->getInt());
 
     if (nextAttempt > context.getModel().getClock().now()) {
         return nullptr;
@@ -1070,6 +1053,10 @@ std::unique_ptr<Request> TransactionService::Evse::fetchFrontRequest() {
     txEventFront->attemptNr++;
     txEventFront->attemptTime = context.getModel().getClock().now();
     txStore.commit(txEventFront.get());
+    if ((int)txEventFront->attemptNr > txService.messageAttemptsTransactionEventInt->getInt()) {
+        MO_DBG_WARN("exceeded TransactionMessageAttempts, keep retrying seqNo=%u attemptNr=%u",
+                    txEventFront->seqNo, txEventFront->attemptNr);
+    }
 
     auto txEventRequest = makeRequest(new TransactionEvent(context.getModel(), txEventFront.get()));
     txEventRequest->setOnReceiveConfListener([this] (JsonObject) {
@@ -1077,6 +1064,16 @@ std::unique_ptr<Request> TransactionService::Evse::fetchFrontRequest() {
         txStore.remove(*txFront, txEventFront->seqNo);
         txEventFront = nullptr;
         txEventFrontIsRequested = false;
+    });
+    txEventRequest->setOnTimeoutListener([this] () {
+        // NOEX: 応答が来ない(回線の不安定)のは試行に数えない。数えると MessageAttempts(既定 3)回で Ended を
+        // 捨て、CSMS に課金の値が届かない(2026-10-07 現場の 8bfc、2026-10-24 課金の抜けの調査)。
+        // 捨てるのは CSMS が CALLERROR で断ったときだけにする
+        if (txEventFront && txEventFront->attemptNr > 0) {
+            txEventFront->attemptNr--;
+            txStore.commit(txEventFront.get());
+            MO_DBG_WARN("txEvent timed out, retry without counting the attempt seqNo=%u", txEventFront->seqNo);
+        }
     });
     txEventRequest->setOnAbortListener([this] () {
         MO_DBG_DEBUG("unsuccessful front txEvent");

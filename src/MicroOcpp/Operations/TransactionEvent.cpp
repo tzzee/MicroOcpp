@@ -41,6 +41,14 @@ std::unique_ptr<JsonDoc> TransactionEvent::createReq() {
         capacity += meterValueJson.capacity();
     }
 
+    // NOEX: 記録から読み戻した積算値(再起動・読み直しのあと。2026-10-24)
+    if (txEvent->eventType == TransactionEventData::Type::Ended && txEvent->transaction->sampledDataTxEndedStored) {
+        capacity += txEvent->transaction->sampledDataTxEndedStored->memoryUsage() + JSON_ARRAY_SIZE(1);
+    }
+    if (txEvent->meterValueStored) {
+        capacity += txEvent->meterValueStored->memoryUsage() + JSON_ARRAY_SIZE(1);
+    }
+
     capacity +=
             JSON_OBJECT_SIZE(12) + //total of 12 fields
             JSONDATE_LENGTH + 1 + //timestamp string
@@ -59,6 +67,12 @@ std::unique_ptr<JsonDoc> TransactionEvent::createReq() {
         //same as v16 StartTransaction: an event created before the clock was set in this power cycle gets its time now
         MO_DBG_DEBUG("adjust preboot TransactionEvent timestamp");
         txEvent->timestamp = model.getClock().adjustPrebootTimestamp(txEvent->timestamp);
+    }
+
+    // NOEX: 前の起動で時刻が合う前に作ったできごとは時刻が分からない。捨てずに今の時刻で送る(2026-10-24)
+    if (txEvent->timestamp < MIN_TIME && model.getClock().now() >= MIN_TIME) {
+        MO_DBG_WARN("TransactionEvent timestamp unknown (previous power cycle), use current time seqNo=%u", txEvent->seqNo);
+        txEvent->timestamp = model.getClock().now();
     }
 
     char timestamp [JSONDATE_LENGTH + 1];
@@ -121,10 +135,22 @@ std::unique_ptr<JsonDoc> TransactionEvent::createReq() {
     }
 
     if (txEvent->eventType == TransactionEventData::Type::Ended) {
+        // NOEX: 記録から読み戻した分(再起動の前の Transaction.Begin など)を先に載せる
+        if (txEvent->transaction->sampledDataTxEndedStored) {
+            for (JsonVariantConst mv : txEvent->transaction->sampledDataTxEndedStored->as<JsonArrayConst>()) {
+                payload["meterValue"].add(mv);
+            }
+        }
         for (size_t i = 0; i < txEvent->transaction->sampledDataTxEnded.size(); i++) {
             JsonDoc meterValueJson = initJsonDoc(getMemoryTag());
             txEvent->transaction->sampledDataTxEnded[i]->toJson(meterValueJson);
             payload["meterValue"].add(meterValueJson);
+        }
+    }
+
+    if (txEvent->meterValueStored) {
+        for (JsonVariantConst mv : txEvent->meterValueStored->as<JsonArrayConst>()) {
+            payload["meterValue"].add(mv);
         }
     }
 

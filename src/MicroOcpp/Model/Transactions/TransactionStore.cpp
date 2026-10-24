@@ -225,9 +225,127 @@ bool TransactionStore::remove(unsigned int connectorId, unsigned int txNr) {
 #if MO_ENABLE_V201
 
 #include <algorithm>
+#include <string.h>
 
 namespace MicroOcpp {
 namespace Ocpp201 {
+
+/*
+ * NOEX(2026-10-24): 取引の記録(tx201 のファイル)に積算電力量を残す。上流は meterValue と sampledDataTxEnded を
+ * 保存せず(RAM だけ)、未送の Ended を抱えたまま再起動する・取引が読み直されると、CSMS に届く Ended に積算値が
+ * 載らず課金できなかった。全部の測定値を残すと 1 ファイルが MO_MAX_JSON_CAPACITY(ESP32 は 4096)を超えて読めなく
+ * なり Ended ごと捨てられるので、課金に要る Energy.Active.Import.Register の sampledValue だけを残す。
+ */
+namespace {
+
+const char *const kStoredMvTag = "v201.Transactions.StoredMeterValue";
+const char *const kEnergyMeasurand = "Energy.Active.Import.Register";
+
+/**
+ * @brief 送る形の meterValue 1 件から、積算電力量の sampledValue だけを dst の末尾に足す
+ * @param dst 足す先の配列
+ * @param mv 送る形の meterValue(timestamp と sampledValue)
+ * @return 足せたか(積算電力量が無ければ何も足さずに true)
+ */
+bool appendEnergyOnly(JsonArray dst, JsonObjectConst mv) {
+    JsonObject out;
+    for (JsonObjectConst sv : mv["sampledValue"].as<JsonArrayConst>()) {
+        const char *measurand = sv["measurand"] | kEnergyMeasurand; //省略は積算電力量(OCPP 2.0.1 の既定)
+        if (strcmp(measurand, kEnergyMeasurand)) {
+            continue;
+        }
+        if (out.isNull()) {
+            out = dst.createNestedObject();
+            if (out.isNull() || !out["timestamp"].set(mv["timestamp"]) || out.createNestedArray("sampledValue").isNull()) {
+                return false;
+            }
+        }
+        if (!out["sampledValue"].add(sv)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief 記録に書く meterValue の器の大きさを見積もる(多めに見る)
+ * @param live RAM の meterValue
+ * @param stored 記録から読み戻した meterValue
+ * @return 見積もり[byte]
+ */
+size_t measureStoredMeterValues(Vector<std::unique_ptr<MeterValue>>& live, const std::unique_ptr<JsonDoc>& stored) {
+    size_t capacity = 0;
+    if (stored) {
+        capacity += stored->memoryUsage() + JSON_ARRAY_SIZE(1);
+    }
+    for (auto& mv : live) {
+        JsonDoc mvJson = initJsonDoc(kStoredMvTag);
+        if (mv && mv->toJson(mvJson)) {
+            capacity += mvJson.capacity() + JSON_ARRAY_SIZE(1);
+        }
+    }
+    return capacity;
+}
+
+/**
+ * @brief 読み戻した分(先)と RAM の分(後)の meterValue を、積算電力量だけにして parent[key] に書く
+ * @param live RAM の meterValue
+ * @param stored 記録から読み戻した meterValue(積算電力量だけの形)
+ * @param parent 書く先
+ * @param key 書くキー
+ * @return 書けたか(書くものが無ければ書かずに true)
+ */
+bool serializeStoredMeterValues(Vector<std::unique_ptr<MeterValue>>& live, const std::unique_ptr<JsonDoc>& stored,
+                                JsonObject parent, const char *key) {
+    const bool hasStored = stored && !stored->isNull();
+    if (live.empty() && !hasStored) {
+        return true;
+    }
+    JsonArray arr = parent.createNestedArray(key);
+    if (arr.isNull()) {
+        return false;
+    }
+    if (hasStored) {
+        for (JsonVariantConst mv : stored->as<JsonArrayConst>()) {
+            if (!arr.add(mv)) {
+                return false;
+            }
+        }
+    }
+    for (auto& mv : live) {
+        JsonDoc mvJson = initJsonDoc(kStoredMvTag);
+        if (!mv || !mv->toJson(mvJson) || !appendEnergyOnly(arr, mvJson.as<JsonObjectConst>())) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief 記録の parent[key] にある meterValue の配列を読み戻す。読めなくても取引や Ended は捨てない(積算値が
+ *        載らないだけにする)
+ * @param parent 読む元
+ * @param key 読むキー
+ * @param out 読み戻した配列(無い・読めないときは空のまま)
+ */
+void deserializeStoredMeterValues(JsonObject parent, const char *key, std::unique_ptr<JsonDoc>& out) {
+    out.reset();
+    if (!parent.containsKey(key)) {
+        return;
+    }
+    JsonArray arr = parent[key];
+    if (arr.isNull()) {
+        MO_DBG_WARN("stored meterValue %s is not an array, ignore", key);
+        return;
+    }
+    out = makeJsonDoc(kStoredMvTag, arr.memoryUsage() + JSON_ARRAY_SIZE(1) + 64);
+    if (!out || !out->set(arr)) {
+        MO_DBG_WARN("stored meterValue %s could not be restored, ignore", key);
+        out.reset();
+    }
+}
+
+} //namespace
 
 bool TransactionStoreEvse::serializeTransaction(Transaction& tx, JsonObject txJson) {
 
@@ -304,7 +422,11 @@ bool TransactionStoreEvse::serializeTransaction(Transaction& tx, JsonObject txJs
         stopIdToken["type"] = tx.stopIdToken->getTypeCstr();
     }
 
-    //sampledDataTxEnded not supported yet
+    //sampledDataTxEnded: NOEX は積算電力量だけを残す(上の serializeStoredMeterValues)
+    if (!serializeStoredMeterValues(tx.sampledDataTxEnded, tx.sampledDataTxEndedStored, txJson, "noexMvEnded")) {
+        MO_DBG_ERR("sampledDataTxEnded serialization error");
+        return false;
+    }
 
     if (tx.silent) {
         txJson["silent"] = true;
@@ -425,7 +547,8 @@ bool TransactionStoreEvse::deserializeTransaction(Transaction& tx, JsonObject tx
         tx.stopIdToken = std::move(stopIdToken);
     }
 
-    //sampledDataTxEnded not supported yet
+    //sampledDataTxEnded: NOEX は積算電力量だけを読み戻す
+    deserializeStoredMeterValues(txJson, "noexMvEnded", tx.sampledDataTxEndedStored);
 
     if (auto txId = txJson["txId"] | (const char*)nullptr) {
         auto ret = snprintf(tx.transactionId, sizeof(tx.transactionId), "%s", txId);
@@ -500,7 +623,11 @@ bool TransactionStoreEvse::serializeTransactionEvent(TransactionEventData& txEve
         }
     }
 
-    //meterValue not supported yet
+    //meterValue: NOEX は積算電力量だけを残す
+    if (!serializeStoredMeterValues(txEvent.meterValue, txEvent.meterValueStored, txEventJson, "noexMv")) {
+        MO_DBG_ERR("meterValue serialization error");
+        return false;
+    }
 
     txEventJson["opNr"] = txEvent.opNr;
     txEventJson["attemptNr"] = txEvent.attemptNr;
@@ -614,7 +741,8 @@ bool TransactionStoreEvse::deserializeTransactionEvent(TransactionEventData& txE
         }
     }
 
-    //meterValue not supported yet
+    //meterValue: NOEX は積算電力量だけを読み戻す
+    deserializeStoredMeterValues(txEventJson, "noexMv", txEvent.meterValueStored);
 
     int opNrIn = txEventJson["opNr"] | -1;
     if (opNrIn >= 0) {
@@ -958,7 +1086,12 @@ bool TransactionStoreEvse::commit(Transaction& tx, TransactionEventData *txEvent
         return false;
     }
 
-    auto txDoc = initJsonDoc("v201.Transactions.TransactionStoreEvse", 2048);
+    // NOEX: 積算電力量を残す分を足す(見積もりは送る形の全部の測定値で多めに取る。書くのは積算電力量だけ)
+    size_t mvCapacity = measureStoredMeterValues(tx.sampledDataTxEnded, tx.sampledDataTxEndedStored);
+    if (txEvent) {
+        mvCapacity += measureStoredMeterValues(txEvent->meterValue, txEvent->meterValueStored);
+    }
+    auto txDoc = initJsonDoc("v201.Transactions.TransactionStoreEvse", 2048 + mvCapacity);
 
     if (!serializeTransaction(tx, txDoc.createNestedObject("tx"))) {
         MO_DBG_ERR("Serialization error");

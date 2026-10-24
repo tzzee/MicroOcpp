@@ -307,6 +307,9 @@ public:
      */
 
     Vector<std::unique_ptr<Ocpp201::MeterValue>> sampledDataTxEnded;
+    // NOEX: 記録(tx201 のファイル)から読み戻した Ended の積算値(送る形の meterValue の配列。積算電力量だけ)。
+    // sampledDataTxEnded は RAM にしか無く、再起動・読み直しのあとの Ended に積算値が載らなかった(2026-10-24)
+    std::unique_ptr<JsonDoc> sampledDataTxEndedStored;
 
     unsigned long lastSampleTimeTxUpdated = 0; //0 means not charging right now
     unsigned long lastSampleTimeTxEnded = 0;
@@ -391,6 +394,8 @@ public:
     EvseId evse = -1;
     //meterValue not supported
     Vector<std::unique_ptr<MeterValue>> meterValue;
+    // NOEX: 記録から読み戻したこのできごとの meterValue(送る形の配列。積算電力量だけ。2026-10-24)
+    std::unique_ptr<JsonDoc> meterValueStored;
     
     unsigned int opNr = 0;
     unsigned int attemptNr = 0;

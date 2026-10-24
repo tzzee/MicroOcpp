@@ -227,9 +227,12 @@ bool BootService::recover(std::shared_ptr<FilesystemAdapter> filesystem, BootSta
         return false;
     }
 
+    // NOEX: 取引の記録(tx で始まるファイル)は消さない。消すと未送の Ended(課金の値)が CSMS に届かなくなる
+    // (髙橋 2026-10-24「6A 以外はどのケースも抜けてはいけない」)。停電の入り切りが続くだけでも起動の失敗に数えられる。
+    // 壊れて読めない取引のファイルは、読み込み(TransactionStoreEvse::loadTransactionEvent)と Noex_Ocpp の
+    // sanitizeStoredTransactionEventFiles が 1 つずつ捨てるので、ここで全部消さなくても起動は詰まらない
     bool success = FilesystemUtils::remove_if(filesystem, [] (const char *fname) -> bool {
         return !strncmp(fname, "sd", strlen("sd")) ||
-                !strncmp(fname, "tx", strlen("tx")) ||
                 !strncmp(fname, "sc-", strlen("sc-")) ||
                 !strncmp(fname, "reservation", strlen("reservation")) ||
                 !strncmp(fname, "client-state", strlen("client-state"));
