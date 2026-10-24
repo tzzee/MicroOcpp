@@ -58,6 +58,12 @@ public:
 
     ChargePointStatus getStatus();
 
+    /**
+     * Send a StatusNotification with the current status now (TriggerMessage of OCPP 2.0.1). Only for evseId >= 1.
+     * Returns true if the request was initiated.
+     */
+    bool triggerStatusNotification();
+
     void setUnavailable(void *requesterId);
     void setAvailable(void *requesterId);
 

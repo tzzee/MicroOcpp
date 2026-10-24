@@ -38,6 +38,18 @@ void AvailabilityServiceEvse::loop() {
     }
 }
 
+bool AvailabilityServiceEvse::triggerStatusNotification() {
+    if (evseId < 1) {
+        return false;
+    }
+    auto status = getStatus();
+    auto statusNotification = makeRequest(new Ocpp201::StatusNotification(evseId, status, context.getModel().getClock().now()));
+    statusNotification->setTimeout(0);
+    context.getRequestQueue().sendRequestPreBoot(std::move(statusNotification));
+    reportedStatus = status;
+    return true;
+}
+
 void AvailabilityServiceEvse::setConnectorPluggedInput(std::function<bool()> connectorPluggedInput) {
     this->connectorPluggedInput = connectorPluggedInput;
 }
