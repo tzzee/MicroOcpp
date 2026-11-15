@@ -138,6 +138,19 @@ public:
     Timestamp adjustPrebootTimestamp(const Timestamp& t);
 };
 
+/*
+ * NOEX: 電源が入っている間(このプロセスの間)を表す番号(0 以外)。時計が合う前の時刻は起動からの経過秒
+ * (mocpp_tick_ms())なので、同じ電源の間なら、時計が合ったあとに adjustPrebootTimestamp で本当の時刻に直せる。
+ * 製品が OCPP を作り直す(mocpp_deinitialize・mocpp_initialize)と bootNr は変わるが、この番号は変わらない
+ * (2026-11-15、LOCAL から戻した取引の時刻とメーター値が 1970 年のまま CSMS に届いていた)
+ */
+uint32_t mo_getPowerCycleId();
+
+/*
+ * 単体テスト用: 電源を入れ直したことにする(次の mo_getPowerCycleId() から新しい番号を返す)。製品からは呼ばない
+ */
+void mo_setPowerCycleIdForTest(uint32_t id);
+
 }
 
 #endif

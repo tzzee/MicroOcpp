@@ -6,6 +6,16 @@
 #include <string.h>
 #include <ctype.h>	
 
+#if defined(ESP_PLATFORM)
+#if __has_include(<esp_random.h>)
+#include <esp_random.h>
+#else
+#include <esp_system.h>
+#endif
+#elif MO_PLATFORM == MO_PLATFORM_UNIX
+#include <random>
+#endif
+
 namespace MicroOcpp {
 
 const Timestamp MIN_TIME = Timestamp(2010, 0, 0, 0, 0, 0);
@@ -370,6 +380,30 @@ Timestamp Clock::adjustPrebootTimestamp(const Timestamp& t) {
         return mocpp_basetime;
     }
     return mocpp_basetime - ((int) (system_basetime / 1000) - systemtime_in);
+}
+
+namespace {
+uint32_t powerCycleId = 0;
+}
+
+uint32_t mo_getPowerCycleId() {
+    if (powerCycleId == 0) {
+#if defined(ESP_PLATFORM)
+        powerCycleId = esp_random();
+#elif MO_PLATFORM == MO_PLATFORM_UNIX
+        powerCycleId = (uint32_t) std::random_device{}();
+#else
+        powerCycleId = (uint32_t) mocpp_tick_ms() ^ (uint32_t) (uintptr_t) &powerCycleId;
+#endif
+        if (powerCycleId == 0) {
+            powerCycleId = 1;
+        }
+    }
+    return powerCycleId;
+}
+
+void mo_setPowerCycleIdForTest(uint32_t id) {
+    powerCycleId = id;
 }
 
 }

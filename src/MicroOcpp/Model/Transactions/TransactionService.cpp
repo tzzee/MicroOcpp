@@ -217,6 +217,7 @@ bool TransactionService::Evse::beginTransaction() {
     }
 
     tx->beginTimestamp = context.getModel().getClock().now();
+    tx->beginPowerCycle = mo_getPowerCycleId();
 
     if (!txStore.commit(tx.get())) {
         MO_DBG_ERR("fs error");
@@ -564,6 +565,9 @@ void TransactionService::Evse::loop() {
         //Record the boot number with the event. fetchFrontRequest() treats an event without valid time as unrecoverable
         //only if it comes from another power cycle; without this, every pre-boot event (bootNr = 0) was discarded
         txEvent->bootNr = context.getModel().getBootNr();
+        //NOEX: and the power cycle. OCPP may be re-initialized within the same power cycle (bootNr changes); the
+        //pre-boot timestamp (seconds since power on) can still be corrected then
+        txEvent->powerCycle = mo_getPowerCycleId();
         //E04: a TransactionEvent which happens while the Charging Station is offline is sent later with offline=true.
         //All new events of this EVSE are created above and pass here, so mark them at the time they happen
         txEvent->offline = !context.getConnection().isConnected();
@@ -759,6 +763,7 @@ bool TransactionService::Evse::beginAuthorization(IdToken idToken, bool validate
     transaction->isAuthorizationActive = true;
     transaction->idToken = idToken;
     transaction->beginTimestamp = context.getModel().getClock().now();
+    transaction->beginPowerCycle = mo_getPowerCycleId();
 
     if (validateIdToken) {
         auto authorize = makeRequest(new Authorize(context.getModel(), idToken));

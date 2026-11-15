@@ -285,6 +285,9 @@ public:
     bool isDeauthorized = false;  //if the server revoked a local authorization
     IdToken idToken;
     Timestamp beginTimestamp = MIN_TIME;
+    // NOEX: 取引を始めた電源の番号(mo_getPowerCycleId())。Transaction.Begin のメーター値の時刻を直してよいかに使う。
+    // 0 は分からない(前の版で保存したもの)
+    uint32_t beginPowerCycle = 0;
     char transactionId [MO_TXID_LEN_MAX + 1] = {'\0'};
     int remoteStartId = -1;
 
@@ -379,6 +382,8 @@ public:
     Type eventType;
     Timestamp timestamp;
     uint16_t bootNr = 0;
+    // NOEX: できごとを作った電源の番号(mo_getPowerCycleId())。0 は分からない(前の版で保存したもの)
+    uint32_t powerCycle = 0;
     TransactionEventTriggerReason triggerReason;
     const unsigned int seqNo;
     bool offline = false;

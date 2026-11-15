@@ -400,6 +400,11 @@ bool TransactionStoreEvse::serializeTransaction(Transaction& tx, JsonObject txJs
         txJson["beginTimestamp"] = timeStr;
     }
 
+    // NOEX: 取引を始めた電源の番号。Transaction.Begin のメーター値の時刻を直してよいか(同じ電源の間か)に使う
+    if (tx.beginPowerCycle) {
+        txJson["noexBpc"] = tx.beginPowerCycle;
+    }
+
     if (tx.remoteStartId >= 0) {
         txJson["remoteStartId"] = tx.remoteStartId;
     }
@@ -508,6 +513,8 @@ bool TransactionStoreEvse::deserializeTransaction(Transaction& tx, JsonObject tx
         }
     }
 
+    tx.beginPowerCycle = txJson["noexBpc"] | (uint32_t) 0;
+
     if (txJson.containsKey("remoteStartId")) {
         int remoteStartIdIn = txJson["remoteStartId"] | -1;
         if (remoteStartIdIn < 0) {
@@ -577,9 +584,16 @@ bool TransactionStoreEvse::serializeTransactionEvent(TransactionEventData& txEve
         char timeStr [JSONDATE_LENGTH + 1] = {'\0'};
         txEvent.timestamp.toJsonString(timeStr, JSONDATE_LENGTH + 1);
         txEventJson["timestamp"] = timeStr;
+    } else if (txEvent.timestamp > Timestamp()) {
+        // NOEX: 時計が合う前の時刻は起動からの経過秒なので、捨てずに秒で残す。OCPP を作り直しても同じ電源の間なら、
+        // 時計が合ったあとに本当の時刻に直せる(捨てると送るときの時刻に置き換わっていた。2026-11-15)
+        txEventJson["noexUpt"] = txEvent.timestamp - Timestamp();
     }
 
     txEventJson["bootNr"] = txEvent.bootNr;
+    if (txEvent.powerCycle) {
+        txEventJson["noexPc"] = txEvent.powerCycle;
+    }
 
     if (serializeTransactionEventTriggerReason(txEvent.triggerReason)) {
         txEventJson["triggerReason"] = serializeTransactionEventTriggerReason(txEvent.triggerReason);
@@ -653,7 +667,16 @@ bool TransactionStoreEvse::deserializeTransactionEvent(TransactionEventData& txE
         if (!txEvent.timestamp.setTime(txEventJson["timestamp"] | "_Undefined")) {
             return false;
         }
+    } else {
+        // NOEX: 時計が合う前の時刻(起動からの経過秒)
+        int uptimeIn = txEventJson["noexUpt"] | -1;
+        if (uptimeIn > 0) {
+            txEvent.timestamp = Timestamp();
+            txEvent.timestamp += uptimeIn;
+        }
     }
+
+    txEvent.powerCycle = txEventJson["noexPc"] | (uint32_t) 0;
 
     int bootNrIn = txEventJson["bootNr"] | -1;
     if (bootNrIn >= 0 && bootNrIn <= std::numeric_limits<uint16_t>::max()) {
