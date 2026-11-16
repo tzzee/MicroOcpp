@@ -12,6 +12,14 @@
 #else
 #include <esp_system.h>
 #endif
+#if __has_include(<esp_timer.h>)
+#include <esp_timer.h>
+#define MO_NOEX_HAS_ESP_TIMER 1
+#endif
+#if __has_include(<esp_cpu.h>)
+#include <esp_cpu.h>
+#define MO_NOEX_HAS_ESP_CPU 1
+#endif
 #elif MO_PLATFORM == MO_PLATFORM_UNIX
 #include <random>
 #endif
@@ -392,7 +400,16 @@ uint32_t powerCycleId = 0;
 uint32_t mo_getPowerCycleId() {
     if (powerCycleId == 0) {
 #if defined(ESP_PLATFORM)
-        powerCycleId = esp_random();
+        // NOEX: RF を動かす前は esp_random() が疑似乱数になりうるので、起動からの時間(µs)と CPU の数えを混ぜる
+        // (電源をまたいで同じ番号になると、前の電源の時刻を今の電源の基準で直してしまう。2026-11-16 のレビュー 2 回目)
+        uint32_t mixed = esp_random();
+#if defined(MO_NOEX_HAS_ESP_TIMER)
+        mixed ^= (uint32_t) esp_timer_get_time();
+#endif
+#if defined(MO_NOEX_HAS_ESP_CPU)
+        mixed ^= (uint32_t) esp_cpu_get_cycle_count();
+#endif
+        powerCycleId = mixed;
 #elif MO_PLATFORM == MO_PLATFORM_UNIX
         powerCycleId = (uint32_t) std::random_device{}();
 #else
