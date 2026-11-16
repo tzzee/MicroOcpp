@@ -81,9 +81,12 @@ std::unique_ptr<JsonDoc> TransactionEvent::createReq() {
     const bool clockSet = model.getClock().now() >= MIN_TIME;
     const uint32_t powerCycle = mo_getPowerCycleId();
     // NOEX: 同じ電源の間に作ったできごとか。製品が OCPP を作り直すと bootNr は変わるが、電源の番号は変わらない。
-    // 同じ電源の間なら、時計が合う前の時刻(起動からの経過秒)を本当の時刻に直せる(2026-11-15)
-    const bool eventSamePowerCycle = txEvent->bootNr == model.getBootNr() ||
-            (txEvent->powerCycle != 0 && txEvent->powerCycle == powerCycle && txEvent->timestamp > Timestamp());
+    // 同じ電源の間なら、時計が合う前の時刻(起動からの経過秒)を本当の時刻に直せる(2026-11-15)。
+    // 電源の番号を持つできごとは、番号だけで決める。bootNr は記録の消し(recover・migrate)や一回りで前の電源と
+    // 重なりうるので、番号を持たない古い記録のときだけ使う(2026-11-16 のレビュー 2 回目)
+    const bool eventSamePowerCycle = txEvent->powerCycle != 0
+            ? (txEvent->powerCycle == powerCycle && txEvent->timestamp > Timestamp())
+            : txEvent->bootNr == model.getBootNr();
 
     if (txEvent->timestamp < MIN_TIME &&
             eventSamePowerCycle &&

@@ -200,6 +200,8 @@ void initializeWithMeter(LoopbackConnection& loopback, std::vector<SentEvent>& s
                 ev.eventType = request["eventType"] | "_Undefined";
                 ev.timestamp.setTime(request["timestamp"] | "_Undefined");
                 for (JsonObject mv : request["meterValue"].as<JsonArray>()) {
+                    //the power cycle of stored values (MO_STORED_MV_POWER_CYCLE_KEY) is internal and never sent to the CSMS
+                    REQUIRE( !mv.containsKey(MO_STORED_MV_POWER_CYCLE_KEY) );
                     Timestamp t;
                     t.setTime(mv["timestamp"] | "_Undefined");
                     ev.meterValues.emplace_back(mv["sampledValue"][0]["context"] | "Sample.Periodic", t);
@@ -353,7 +355,11 @@ TEST_CASE( "Timestamps taken before the clock is set are corrected after 2^31 ms
 
     //NOEX: adjustPrebootTimestamp cast mocpp_tick_ms() to int before dividing, so from 24.86 to 49.7 days of uptime
     //every time taken before the clock was set collapsed to the time the clock was set (2026-11-16 review)
-    const unsigned long savedMtime = mtime;
+    //restore mtime even when a REQUIRE fails, so that the following test cases keep the usual uptime
+    struct MtimeRestore {
+        unsigned long saved;
+        ~MtimeRestore() {mtime = saved;}
+    } mtimeRestore {mtime};
     mtime = 2200000000UL; //about 25.5 days
 
     auto filesystem = makeDefaultFilesystemAdapter(FilesystemOpt::Use_Mount_FormatOnFail);
@@ -374,7 +380,51 @@ TEST_CASE( "Timestamps taken before the clock is set are corrected after 2^31 ms
     requireCorrectedTimes(sent);
 
     mocpp_deinitialize();
-    mtime = savedMtime;
+}
+
+TEST_CASE( "An event of a previous power cycle with the same bootNr is not corrected with the current base" ) {
+    printf("\nRun %s\n",  "An event of a previous power cycle with the same bootNr is not corrected with the current base");
+
+    //NOEX: bootNr restarts when the boot stats are cleared (recovery, migration) and wraps at 65535, so an event of a
+    //previous power cycle may carry the current bootNr. With a power cycle id, only the id decides (2026-11-16 review)
+
+    auto filesystem = makeDefaultFilesystemAdapter(FilesystemOpt::Use_Mount_FormatOnFail);
+    FilesystemUtils::remove_if(filesystem, [] (const char*) {return true;});
+
+    LoopbackConnection loopback;
+    loopback.setConnected(false); //no BootNotification, so the clock stays unset
+
+    std::vector<SentEvent> sent;
+    initializeWithMeter(loopback, sent);
+    const uint16_t bootNrBefore = getOcppContext()->getModel().getBootNr();
+
+    getOcppContext()->getModel().getTransactionService()->getEvse(1)->beginAuthorization("mIdToken", false);
+    loop();
+    REQUIRE( getOcppContext()->getModel().getTransactionService()->getEvse(1)->getTransaction() != nullptr );
+
+    mocpp_deinitialize();
+    mo_setPowerCycleIdForTest(mo_getPowerCycleId() + 1);
+    //the boot number goes back (as after clearing the boot stats in a recovery), so the next run gets the same bootNr again
+    {
+        auto bootstats = FilesystemUtils::loadJson(filesystem, MO_FILENAME_PREFIX "bootstats.jsn", "UnitTests");
+        REQUIRE( bootstats != nullptr );
+        (*bootstats)["bootNr"] = bootNrBefore - 1;
+        REQUIRE( FilesystemUtils::storeJson(filesystem, MO_FILENAME_PREFIX "bootstats.jsn", *bootstats) );
+    }
+    loopback.setConnected(true);
+    initializeWithMeter(loopback, sent);
+    REQUIRE( getOcppContext()->getModel().getBootNr() == bootNrBefore );
+    loop();
+    loop();
+
+    auto started = findEvent(sent, "Started");
+    REQUIRE( started != nullptr );
+    Timestamp base;
+    base.setTime(BASE_TIME);
+    //the time of the previous power cycle is unknown: sent with the current time, not corrected with this power cycle's base
+    REQUIRE( started->timestamp >= base );
+
+    mocpp_deinitialize();
 }
 
 /**
