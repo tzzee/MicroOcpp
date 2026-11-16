@@ -158,65 +158,84 @@ std::unique_ptr<JsonDoc> TransactionEvent::createReq() {
         }
     }
 
+    // NOEX: 時計が合う前に取ったメーター値の時刻(1970 年 + 起動からの経過秒)も、できごとと同じく直す。直さずに送ると、
+    // CSMS に 1970 年の時刻のメーター値が届いていた(LOCAL から戻した取引・停電で起き直した取引。2026-11-15)。
+    // 値ごとに、今の電源で取った値かを決める(2026-11-16 のレビュー。取引の終わりの値は電源をまたいでたまり、
+    // できごとを作った電源や取引を始めた電源で見ると、前の電源の値を今の電源の基準で直していた):
+    // - 記録に書いた値は、取った電源の番号(MO_STORED_MV_POWER_CYCLE_KEY)を持つ(TransactionStore)。番号は CSMS へ送らない
+    // - RAM の値はこの電源で取った
+    // - 番号の無い記録の値(番号を持たせる前の版が書いた)は、このできごとの値ならできごとを作った電源で見る。取引の
+    //   終わりの値は、取った電源が分からない
+    // 今の電源の値は adjustPrebootTimestamp で本当の時刻に直す。そうでない値は、このできごとと同じ時に取った値
+    // (このできごとの値で Transaction.Begin 以外と、Ended の Transaction.End)ならできごとの時刻にそろえ、ほかは
+    // 分からないまま(1970 年)残す(Transaction.Begin や、途中で取った Sample.Periodic を、もっともらしい違う時刻にしない)
+    enum class MvOrigin : uint8_t {TxEndedStored, TxEndedLive, EventStored, EventLive};
+    const int uptimeNow = (int) (mocpp_tick_ms() / 1000UL);
+    auto addMeterValue = [&] (JsonVariantConst mv, MvOrigin origin) {
+        JsonVariant slot = payload["meterValue"].add();
+        if (!slot.set(mv)) { //足したばかりの要素は空(isNull)なので、写せたかだけを見る
+            MO_DBG_ERR("could not add meterValue (OOM)");
+            return;
+        }
+        JsonObject added = slot.as<JsonObject>();
+        const uint32_t takenPowerCycle = added[MO_STORED_MV_POWER_CYCLE_KEY] | (uint32_t) 0;
+        added.remove(MO_STORED_MV_POWER_CYCLE_KEY);
+        Timestamp t;
+        if (!clockSet || !t.setTime(added["timestamp"] | "_Undefined") || t >= MIN_TIME) {
+            return;
+        }
+        const bool eventValue = origin == MvOrigin::EventStored || origin == MvOrigin::EventLive;
+        const char *readingContext = added["sampledValue"][0]["context"] | "";
+        const bool takenWithEvent = eventValue ? strcmp(readingContext, "Transaction.Begin") != 0
+                : (txEvent->eventType == TransactionEventData::Type::Ended && !strcmp(readingContext, "Transaction.End"));
+        bool samePowerCycle = false;
+        if (takenPowerCycle != 0) {
+            samePowerCycle = takenPowerCycle == powerCycle;
+        } else if (origin == MvOrigin::TxEndedLive || origin == MvOrigin::EventLive) {
+            samePowerCycle = true;
+        } else if (origin == MvOrigin::EventStored) {
+            samePowerCycle = eventSamePowerCycle;
+        }
+        samePowerCycle = samePowerCycle && t > Timestamp() && (t - Timestamp()) <= uptimeNow;
+        Timestamp fixed;
+        if (samePowerCycle) {
+            fixed = model.getClock().adjustPrebootTimestamp(t);
+        } else if (takenWithEvent && txEvent->timestamp >= MIN_TIME) {
+            fixed = txEvent->timestamp;
+        } else {
+            return;
+        }
+        char timestampStr [JSONDATE_LENGTH + 1];
+        fixed.toJsonString(timestampStr, sizeof(timestampStr));
+        if (!added["timestamp"].set(timestampStr)) {
+            MO_DBG_ERR("could not correct meterValue timestamp (OOM)");
+        }
+    };
+
     if (txEvent->eventType == TransactionEventData::Type::Ended) {
         // NOEX: 記録から読み戻した分(再起動の前の Transaction.Begin など)を先に載せる
         if (txEvent->transaction->sampledDataTxEndedStored) {
             for (JsonVariantConst mv : txEvent->transaction->sampledDataTxEndedStored->as<JsonArrayConst>()) {
-                payload["meterValue"].add(mv);
+                addMeterValue(mv, MvOrigin::TxEndedStored);
             }
         }
         for (size_t i = 0; i < txEvent->transaction->sampledDataTxEnded.size(); i++) {
             JsonDoc meterValueJson = initJsonDoc(getMemoryTag());
             txEvent->transaction->sampledDataTxEnded[i]->toJson(meterValueJson);
-            payload["meterValue"].add(meterValueJson);
+            addMeterValue(meterValueJson.as<JsonVariantConst>(), MvOrigin::TxEndedLive);
         }
     }
 
     if (txEvent->meterValueStored) {
         for (JsonVariantConst mv : txEvent->meterValueStored->as<JsonArrayConst>()) {
-            payload["meterValue"].add(mv);
+            addMeterValue(mv, MvOrigin::EventStored);
         }
     }
 
     for (size_t i = 0; i < txEvent->meterValue.size(); i++) {
         JsonDoc meterValueJson = initJsonDoc(getMemoryTag());
         txEvent->meterValue[i]->toJson(meterValueJson);
-        payload["meterValue"].add(meterValueJson);
-    }
-
-    // NOEX: 時計が合う前に取ったメーター値の時刻(1970 年 + 起動からの経過秒)も、できごとと同じく直す。直さずに送ると、
-    // CSMS に 1970 年の時刻のメーター値が届いていた(LOCAL から戻した取引・停電で起き直した取引。2026-11-15)。
-    // - 同じ電源の間に取った値は adjustPrebootTimestamp で本当の時刻に直す。Transaction.Begin の値は取引を始めた電源、
-    //   ほかの値はこのできごとを作った電源で見る
-    // - 前の電源で取った値で時刻が分からないものは、このできごとと同じ時に取った値(Transaction.Begin 以外)なら
-    //   このできごとの時刻にそろえる。Transaction.Begin の値は分からないまま(1970 年)残す(もっともらしい違う時刻にしない)
-    if (clockSet && payload.containsKey("meterValue")) {
-        const bool txBeginSamePowerCycle = txEvent->transaction->beginPowerCycle != 0 &&
-                txEvent->transaction->beginPowerCycle == powerCycle;
-        const int uptimeNow = (int) (mocpp_tick_ms() / 1000UL);
-        for (JsonObject mv : payload["meterValue"].as<JsonArray>()) {
-            Timestamp t;
-            if (!t.setTime(mv["timestamp"] | "_Undefined") || t >= MIN_TIME) {
-                continue;
-            }
-            const char *readingContext = mv["sampledValue"][0]["context"] | "";
-            const bool beginValue = !strcmp(readingContext, "Transaction.Begin");
-            const bool samePowerCycle = (beginValue ? txBeginSamePowerCycle : eventSamePowerCycle) &&
-                    t > Timestamp() && (t - Timestamp()) <= uptimeNow;
-            Timestamp fixed;
-            if (samePowerCycle) {
-                fixed = model.getClock().adjustPrebootTimestamp(t);
-            } else if (!beginValue && txEvent->timestamp >= MIN_TIME) {
-                fixed = txEvent->timestamp;
-            } else {
-                continue;
-            }
-            char timestampStr [JSONDATE_LENGTH + 1];
-            fixed.toJsonString(timestampStr, sizeof(timestampStr));
-            if (!mv["timestamp"].set(timestampStr)) {
-                MO_DBG_ERR("could not correct meterValue timestamp (OOM)");
-            }
-        }
+        addMeterValue(meterValueJson.as<JsonVariantConst>(), MvOrigin::EventLive);
     }
 
     return doc;

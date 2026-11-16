@@ -240,11 +240,16 @@ namespace {
 
 const char *const kStoredMvTag = "v201.Transactions.StoredMeterValue";
 const char *const kEnergyMeasurand = "Energy.Active.Import.Register";
+const char *const kPowerCycleKey = MO_STORED_MV_POWER_CYCLE_KEY;
 
 /**
  * @brief 送る形の meterValue 1 件から、積算電力量の sampledValue だけを dst の末尾に足す
+ * @details 時計が合う前の時刻(1970 年 + 起動からの経過秒)の値には、取った電源の番号(noexPc)を添える。送るときに、
+ *          今の電源で取った値だけを本当の時刻に直す(TransactionEvent::createReq。CSMS へは送らない)。取引の終わりの
+ *          値(sampledDataTxEnded)は電源をまたいでたまるので、値ごとに持たないと、前の電源の値を今の電源の基準で
+ *          直してもっともらしい違う時刻にしてしまう(2026-11-16 のレビュー)
  * @param dst 足す先の配列
- * @param mv 送る形の meterValue(timestamp と sampledValue)
+ * @param mv 送る形の meterValue(timestamp と sampledValue)。この電源で取った値
  * @return 足せたか(積算電力量が無ければ何も足さずに true)
  */
 bool appendEnergyOnly(JsonArray dst, JsonObjectConst mv) {
@@ -257,6 +262,11 @@ bool appendEnergyOnly(JsonArray dst, JsonObjectConst mv) {
         if (out.isNull()) {
             out = dst.createNestedObject();
             if (out.isNull() || !out["timestamp"].set(mv["timestamp"]) || out.createNestedArray("sampledValue").isNull()) {
+                return false;
+            }
+            Timestamp taken;
+            if (taken.setTime(mv["timestamp"] | "_Undefined") && taken < MIN_TIME &&
+                    !out[kPowerCycleKey].set(mo_getPowerCycleId())) {
                 return false;
             }
         }
@@ -281,7 +291,7 @@ size_t measureStoredMeterValues(Vector<std::unique_ptr<MeterValue>>& live, const
     for (auto& mv : live) {
         JsonDoc mvJson = initJsonDoc(kStoredMvTag);
         if (mv && mv->toJson(mvJson)) {
-            capacity += mvJson.capacity() + JSON_ARRAY_SIZE(1);
+            capacity += mvJson.capacity() + JSON_ARRAY_SIZE(1) + JSON_OBJECT_SIZE(1); //電源の番号(noexPc)の分
         }
     }
     return capacity;
@@ -400,11 +410,6 @@ bool TransactionStoreEvse::serializeTransaction(Transaction& tx, JsonObject txJs
         txJson["beginTimestamp"] = timeStr;
     }
 
-    // NOEX: 取引を始めた電源の番号。Transaction.Begin のメーター値の時刻を直してよいか(同じ電源の間か)に使う
-    if (tx.beginPowerCycle) {
-        txJson["noexBpc"] = tx.beginPowerCycle;
-    }
-
     if (tx.remoteStartId >= 0) {
         txJson["remoteStartId"] = tx.remoteStartId;
     }
@@ -512,8 +517,6 @@ bool TransactionStoreEvse::deserializeTransaction(Transaction& tx, JsonObject tx
             return false;
         }
     }
-
-    tx.beginPowerCycle = txJson["noexBpc"] | (uint32_t) 0;
 
     if (txJson.containsKey("remoteStartId")) {
         int remoteStartIdIn = txJson["remoteStartId"] | -1;

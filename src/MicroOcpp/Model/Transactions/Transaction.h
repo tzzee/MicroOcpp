@@ -198,6 +198,10 @@ public:
 #include <MicroOcpp/Model/ConnectorBase/EvseId.h>
 #include <MicroOcpp/Model/Metering/MeterValuesV201.h>
 
+// NOEX: 記録に書いた meterValue のうち、時計が合う前の時刻(1970 年 + 起動からの経過秒)の値に添える、取った電源の
+// 番号(mo_getPowerCycleId())のキー。送るときに今の電源の値だけを本当の時刻に直し、このキーは CSMS へ送らない
+#define MO_STORED_MV_POWER_CYCLE_KEY "noexPc"
+
 #ifndef MO_SAMPLEDDATATXENDED_SIZE_MAX
 #define MO_SAMPLEDDATATXENDED_SIZE_MAX 5
 #endif
@@ -285,9 +289,6 @@ public:
     bool isDeauthorized = false;  //if the server revoked a local authorization
     IdToken idToken;
     Timestamp beginTimestamp = MIN_TIME;
-    // NOEX: 取引を始めた電源の番号(mo_getPowerCycleId())。Transaction.Begin のメーター値の時刻を直してよいかに使う。
-    // 0 は分からない(前の版で保存したもの)
-    uint32_t beginPowerCycle = 0;
     char transactionId [MO_TXID_LEN_MAX + 1] = {'\0'};
     int remoteStartId = -1;
 

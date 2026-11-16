@@ -217,7 +217,6 @@ bool TransactionService::Evse::beginTransaction() {
     }
 
     tx->beginTimestamp = context.getModel().getClock().now();
-    tx->beginPowerCycle = mo_getPowerCycleId();
 
     if (!txStore.commit(tx.get())) {
         MO_DBG_ERR("fs error");
@@ -763,7 +762,6 @@ bool TransactionService::Evse::beginAuthorization(IdToken idToken, bool validate
     transaction->isAuthorizationActive = true;
     transaction->idToken = idToken;
     transaction->beginTimestamp = context.getModel().getClock().now();
-    transaction->beginPowerCycle = mo_getPowerCycleId();
 
     if (validateIdToken) {
         auto authorize = makeRequest(new Authorize(context.getModel(), idToken));

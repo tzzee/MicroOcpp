@@ -377,4 +377,109 @@ TEST_CASE( "Timestamps taken before the clock is set are corrected after 2^31 ms
     mtime = savedMtime;
 }
 
+/**
+ * @brief Take Sample.Periodic Ended data every 10 seconds while the clock is not set, and commit it to flash with
+ *        Updated events every 20 seconds
+ */
+static void runPrebootPeriodicSamples() {
+    auto vs = getOcppContext()->getModel().getVariableService();
+    vs->declareVariable<int>("SampledDataCtrlr", "TxEndedInterval", 0)->setInt(10);
+    vs->declareVariable<const char*>("SampledDataCtrlr", "TxUpdatedMeasurands", "")->setString("Energy.Active.Import.Register");
+    vs->declareVariable<int>("SampledDataCtrlr", "TxUpdatedInterval", 0)->setInt(20);
+
+    getOcppContext()->getModel().getTransactionService()->getEvse(1)->beginAuthorization("mIdToken", false);
+    loop();
+    REQUIRE( getOcppContext()->getModel().getTransactionService()->getEvse(1)->getTransaction() != nullptr );
+    for (int i = 0; i < 15; i++) {
+        loop(); //3 seconds each
+    }
+    REQUIRE( getOcppContext()->getModel().getClock().now() < MIN_TIME );
+}
+
+TEST_CASE( "Periodic Ended data taken before the clock is set is corrected only within its own power cycle" ) {
+    printf("\nRun %s\n",  "Periodic Ended data taken before the clock is set is corrected only within its own power cycle");
+
+    //NOEX: Ended data (sampledDataTxEnded) piles up across power cycles. Judged by the power cycle of the Ended event,
+    //Sample.Periodic values taken in a previous power cycle were corrected with the current power cycle's base and got
+    //a plausible wrong time (2026-11-16 review). Each stored value now carries the power cycle it was taken in
+
+    auto filesystem = makeDefaultFilesystemAdapter(FilesystemOpt::Use_Mount_FormatOnFail);
+    FilesystemUtils::remove_if(filesystem, [] (const char*) {return true;});
+
+    LoopbackConnection loopback;
+    loopback.setConnected(false); //no BootNotification, so the clock stays unset
+
+    std::vector<SentEvent> sent;
+    initializeWithMeter(loopback, sent);
+
+    Timestamp base;
+    base.setTime(BASE_TIME);
+
+    SECTION("Power cycle in between: values of the previous power cycle keep an unknown time") {
+
+        runPrebootPeriodicSamples();
+
+        mocpp_deinitialize();
+        mo_setPowerCycleIdForTest(mo_getPowerCycleId() + 1);
+        loopback.setConnected(true);
+        initializeWithMeter(loopback, sent);
+        loop();
+        loop();
+
+        getOcppContext()->getModel().getTransactionService()->getEvse(1)->endAuthorization();
+        loop();
+        loop();
+
+        auto ended = findEvent(sent, "Ended");
+        REQUIRE( ended != nullptr );
+        size_t nUnknown = 0;
+        for (const auto& mv : ended->meterValues) {
+            if (mv.first != "Sample.Periodic") {
+                continue;
+            }
+            //either still unknown (taken before the power cycle) or taken after the clock was set, never in between
+            REQUIRE( mv.second > Timestamp() ); //sent with a timestamp (not dropped)
+            REQUIRE( (mv.second < MIN_TIME || mv.second >= base) );
+            if (mv.second < MIN_TIME) {
+                nUnknown++;
+            }
+        }
+        REQUIRE( nUnknown >= 1 );
+        for (const auto& ev : sent) {
+            for (const auto& mv : ev.meterValues) {
+                REQUIRE( mv.second > Timestamp() );
+                REQUIRE( (mv.second < MIN_TIME || mv.second >= base) );
+            }
+        }
+    }
+
+    SECTION("OCPP re-initialized within the same power cycle: the values are corrected") {
+
+        runPrebootPeriodicSamples();
+
+        mocpp_deinitialize();
+        loopback.setConnected(true);
+        initializeWithMeter(loopback, sent);
+        loop();
+        loop();
+
+        getOcppContext()->getModel().getTransactionService()->getEvse(1)->endAuthorization();
+        loop();
+        loop();
+
+        auto ended = findEvent(sent, "Ended");
+        REQUIRE( ended != nullptr );
+        size_t nCorrected = 0;
+        for (const auto& mv : ended->meterValues) {
+            REQUIRE( mv.second >= MIN_TIME );
+            if (mv.first == "Sample.Periodic" && mv.second < base) {
+                nCorrected++;
+            }
+        }
+        REQUIRE( nCorrected >= 1 );
+    }
+
+    mocpp_deinitialize();
+}
+
 #endif //MO_ENABLE_V201
