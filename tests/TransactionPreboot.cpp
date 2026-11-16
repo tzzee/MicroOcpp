@@ -348,4 +348,33 @@ TEST_CASE( "Timestamps taken before the clock is set are corrected within the sa
     mocpp_deinitialize();
 }
 
+TEST_CASE( "Timestamps taken before the clock is set are corrected after 2^31 ms of uptime" ) {
+    printf("\nRun %s\n",  "Timestamps taken before the clock is set are corrected after 2^31 ms of uptime");
+
+    //NOEX: adjustPrebootTimestamp cast mocpp_tick_ms() to int before dividing, so from 24.86 to 49.7 days of uptime
+    //every time taken before the clock was set collapsed to the time the clock was set (2026-11-16 review)
+    const unsigned long savedMtime = mtime;
+    mtime = 2200000000UL; //about 25.5 days
+
+    auto filesystem = makeDefaultFilesystemAdapter(FilesystemOpt::Use_Mount_FormatOnFail);
+    FilesystemUtils::remove_if(filesystem, [] (const char*) {return true;});
+
+    LoopbackConnection loopback;
+    loopback.setConnected(false); //no BootNotification, so the clock stays unset
+
+    std::vector<SentEvent> sent;
+    initializeWithMeter(loopback, sent);
+
+    runPrebootTransaction();
+
+    loopback.setConnected(true); //BootNotification sets the clock, then the queued TransactionEvents go out
+    loop();
+    loop();
+
+    requireCorrectedTimes(sent);
+
+    mocpp_deinitialize();
+    mtime = savedMtime;
+}
+
 #endif //MO_ENABLE_V201

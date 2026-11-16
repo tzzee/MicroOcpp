@@ -376,10 +376,13 @@ const Timestamp &Clock::now() {
 
 Timestamp Clock::adjustPrebootTimestamp(const Timestamp& t) {
     auto systemtime_in = t - Timestamp();
-    if (systemtime_in > (int) system_basetime / 1000) {
+    // NOEX: 割ってから int にする。先に int にすると、起動から 2^31 ms(24.86 日)を超えた mocpp_tick_ms() が負になり、
+    // 条件がいつも真になって、時計が合う前の時刻がどれも時計を合わせた時刻 1 つに潰れていた(2026-11-16 のレビュー)
+    const int systemBaseSecs = (int) (system_basetime / 1000);
+    if (systemtime_in > systemBaseSecs) {
         return mocpp_basetime;
     }
-    return mocpp_basetime - ((int) (system_basetime / 1000) - systemtime_in);
+    return mocpp_basetime - (systemBaseSecs - systemtime_in);
 }
 
 namespace {
