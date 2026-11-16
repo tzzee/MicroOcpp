@@ -20,6 +20,9 @@
 #include <esp_cpu.h>
 #define MO_NOEX_HAS_ESP_CPU 1
 #endif
+#if __has_include(<esp_idf_version.h>)
+#include <esp_idf_version.h>
+#endif
 #elif MO_PLATFORM == MO_PLATFORM_UNIX
 #include <random>
 #endif
@@ -407,7 +410,12 @@ uint32_t mo_getPowerCycleId() {
         mixed ^= (uint32_t) esp_timer_get_time();
 #endif
 #if defined(MO_NOEX_HAS_ESP_CPU)
+#if defined(ESP_IDF_VERSION_MAJOR) && ESP_IDF_VERSION_MAJOR >= 5
         mixed ^= (uint32_t) esp_cpu_get_cycle_count();
+#else
+        // ESP-IDF 4 の esp_cpu.h には esp_cpu_get_cycle_count() が無い(2026-11-16 のレビュー 3 回目)
+        mixed ^= (uint32_t) esp_cpu_get_ccount();
+#endif
 #endif
         powerCycleId = mixed;
 #elif MO_PLATFORM == MO_PLATFORM_UNIX
