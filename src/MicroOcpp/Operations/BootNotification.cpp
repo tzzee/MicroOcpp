@@ -28,7 +28,12 @@ std::unique_ptr<JsonDoc> BootNotification::createReq() {
         if (model.getVersion().major == 2) {
             auto doc = makeJsonDoc(getMemoryTag(), JSON_OBJECT_SIZE(2) + credentials->memoryUsage());
             JsonObject payload = doc->to<JsonObject>();
-            payload["reason"] = "PowerUp";
+            //the host tells why the device restarted (BootService::setBootReason); a static string, so no copy is needed
+            const char *reason = "PowerUp";
+            if (auto bootService = model.getBootService()) {
+                reason = bootService->getBootReason();
+            }
+            payload["reason"] = reason;
             payload["chargingStation"] = *credentials;
             return doc;
         }

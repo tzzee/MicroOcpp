@@ -75,6 +75,8 @@ private:
     bool executedFirstTime = false;
     bool executedLongTime = false;
 
+    const char *bootReason = "PowerUp"; //OCPP 2.0.1 BootReasonEnumType (points to a static string)
+
 public:
     BootService(Context& context, std::shared_ptr<FilesystemAdapter> filesystem);
 
@@ -94,6 +96,17 @@ public:
      */
     RegistrationStatus getRegistrationStatus() const {return status;}
     void setRetryInterval(unsigned long interval);
+
+    /**
+     * @brief Sets the reason of the OCPP 2.0.1 BootNotification (BootReasonEnumType).
+     *
+     * @details Defaults to PowerUp. The host knows why the device restarted (e.g. after a firmware
+     *          update it should be FirmwareUpdate); MicroOcpp itself does not. Unknown values are
+     *          ignored and keep the current reason. Ignored in OCPP 1.6 (no reason field).
+     * @return true if the reason was accepted
+     */
+    bool setBootReason(const char *reason);
+    const char *getBootReason() const {return bootReason;}
 
     static bool loadBootStats(std::shared_ptr<FilesystemAdapter> filesystem, BootStats& bstats);
     static bool storeBootStats(std::shared_ptr<FilesystemAdapter> filesystem, BootStats& bstats);

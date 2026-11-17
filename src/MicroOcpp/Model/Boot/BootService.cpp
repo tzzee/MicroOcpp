@@ -3,6 +3,7 @@
 // MIT License
 
 #include <limits>
+#include <string.h>
 
 #include <MicroOcpp/Model/Boot/BootService.h>
 #include <MicroOcpp/Core/Context.h>
@@ -148,6 +149,23 @@ std::unique_ptr<JsonDoc> BootService::getChargePointCredentials() {
 void BootService::notifyRegistrationStatus(RegistrationStatus status) {
     this->status = status;
     lastBootNotification = mocpp_tick_ms();
+}
+
+bool BootService::setBootReason(const char *reason) {
+    static const char *const kReasons[] = {
+        "ApplicationReset", "FirmwareUpdate", "LocalReset", "PowerUp", "RemoteReset",
+        "ScheduledReset", "Triggered", "Unknown", "Watchdog"};
+    if (!reason) {
+        return false;
+    }
+    for (const char *known : kReasons) {
+        if (!strcmp(reason, known)) {
+            bootReason = known; //keep the static string, not the caller's buffer
+            return true;
+        }
+    }
+    MO_DBG_WARN("unknown BootReason: %s", reason);
+    return false;
 }
 
 void BootService::setRetryInterval(unsigned long interval_s) {
