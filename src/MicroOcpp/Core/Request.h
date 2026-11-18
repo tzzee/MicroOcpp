@@ -20,10 +20,38 @@ namespace MicroOcpp {
 class Operation;
 class Model;
 
+/**
+ * @brief 受けた CALL の中身を、操作に渡す前に確かめる関数(OCPP 2.0.1 の JSON スキーマなど)。
+ * @param operationType 受けた Action(登録の無い Action は NotImplemented の操作の名前)
+ * @param payload 受けた中身(CALL の 4 つ目。オブジェクトでないこともある)
+ * @param description 誤りの説明の書き先
+ * @param descriptionSize description の大きさ
+ * @return 合わなければ CALLERROR の名前(静的な文字列)、合えば nullptr
+ */
+using RequestValidator = const char *(*)(const char *operationType, JsonVariantConst payload, char *description,
+                                         size_t descriptionSize);
+
+/**
+ * @brief 受けた CALL を確かめる関数を入れる(nullptr で外す)。
+ * @details 合わなければ操作の processReq() を呼ばずに、返った名前の CALLERROR を返す(GRIDPORT 1.6.10。テラチャージの
+ *          OCPP 2.0.1 評価シートは、必須の欠け・型違い・値の誤りを Occurrence・Type・PropertyConstraintViolation に
+ *          分けて見る。操作は `| 0` で欠けや型違いを既定値として受けていた)
+ */
+void setRequestValidator(RequestValidator validator);
+
+/**
+ * @brief CALLERROR の名前を OCPP-J 2.0.1 の綴りで送るか(操作が返す 1.6 の FormationViolation を FormatViolation にする)。
+ * @details 2.0.1 の Part 4 の誤りの名前は FormatViolation。操作は 1.6 の綴りのまま返していた(GRIDPORT 1.6.10)
+ */
+void setOcppJ20ErrorNames(bool enable);
+
 class Request : public MemoryManaged {
 private:
     String messageID;
     std::unique_ptr<Operation> operation;
+    /// 受けた CALL が確かめで合わなかったときの CALLERROR の名前(合えば nullptr)
+    const char *validationErrorCode = nullptr;
+    char validationErrorDescription [96] = {'\0'};
     void setMessageID(const char *id);
     OnReceiveConfListener onReceiveConfListener = [] (JsonObject payload) {};
     OnReceiveReqListener onReceiveReqListener = [] (JsonObject payload) {};

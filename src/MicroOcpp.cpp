@@ -280,6 +280,9 @@ void mocpp_initialize(Connection& connection, const char *bootNotificationCreden
 
     context = new Context(connection, filesystem, bootstats.bootNr, version);
 
+    // 2.0.1 なら CALLERROR の名前を Part 4 の綴りで送る(操作が返す 1.6 の FormationViolation を FormatViolation に)
+    MicroOcpp::setOcppJ20ErrorNames(version.major == 2);
+
 #if MO_ENABLE_MBEDTLS
     context->setFtpClient(makeFtpClientMbedTLS());
 #endif //MO_ENABLE_MBEDTLS

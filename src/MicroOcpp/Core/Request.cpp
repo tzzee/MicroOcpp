@@ -16,6 +16,17 @@
 namespace MicroOcpp {
     unsigned int g_randSeed = 1394827383;
 
+    RequestValidator g_requestValidator = nullptr;
+    bool g_ocppJ20ErrorNames = false;
+
+    void setRequestValidator(RequestValidator validator) {
+        g_requestValidator = validator;
+    }
+
+    void setOcppJ20ErrorNames(bool enable) {
+        g_ocppJ20ErrorNames = enable;
+    }
+
     void writeRandomNonsecure(unsigned char *buf, size_t len) {
         g_randSeed += mocpp_tick_ms();
         const unsigned int a = 16807;
@@ -190,7 +201,17 @@ bool Request::receiveRequest(JsonArray request) {
     }
   
     setMessageID(request[1].as<const char*>());
-    
+
+    // 操作に渡す前に中身を確かめる。合わなければ操作を動かさずに CALLERROR を返す(setRequestValidator())
+    if (g_requestValidator) {
+        validationErrorCode = g_requestValidator(operation->getOperationType(), request[3],
+                validationErrorDescription, sizeof(validationErrorDescription));
+        if (validationErrorCode) {
+            MO_DBG_WARN("%s rejected: %s %s", operation->getOperationType(), validationErrorCode, validationErrorDescription);
+            return true;
+        }
+    }
+
     /*
      * Hand the payload over to the Request object
      */
@@ -207,7 +228,7 @@ bool Request::receiveRequest(JsonArray request) {
 
 Request::CreateResponseResult Request::createResponse(JsonDoc& response) {
 
-    bool operationFailure = operation->getErrorCode() != nullptr;
+    bool operationFailure = validationErrorCode != nullptr || operation->getErrorCode() != nullptr;
 
     if (!operationFailure) {
 
@@ -233,9 +254,13 @@ Request::CreateResponseResult Request::createResponse(JsonDoc& response) {
     } else {
         //operation failure. Send error message instead
 
-        const char *errorCode = operation->getErrorCode();
-        const char *errorDescription = operation->getErrorDescription();
-        std::unique_ptr<JsonDoc> errorDetails = operation->getErrorDetails();
+        const char *errorCode = validationErrorCode ? validationErrorCode : operation->getErrorCode();
+        const char *errorDescription = validationErrorCode ? validationErrorDescription : operation->getErrorDescription();
+        std::unique_ptr<JsonDoc> errorDetails = validationErrorCode ? createEmptyDocument() : operation->getErrorDetails();
+        if (g_ocppJ20ErrorNames && errorCode && !strcmp(errorCode, "FormationViolation")) {
+            // 2.0.1 の Part 4 の綴り(1.6 の FormationViolation は 2.0.1 には無い)
+            errorCode = "FormatViolation";
+        }
 
         /*
          * Create OCPP-J Remote Procedure Call header
