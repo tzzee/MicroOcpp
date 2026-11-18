@@ -308,8 +308,20 @@ std::unique_ptr<Request> FirmwareService::getFirmwareStatusNotification() {
 
             buildNumber.clear();
 
+            const int notificationRequestId = getNotificationRequestId();
+            if (context.getModel().getVersion().major == 2) {
+                // 2.0.1: UpdateFirmware で頼まれた更新(requestId を覚えている)のときだけ、新しい版で起きたことを Installed で
+                // 知らせ、知らせたら requestId を消す。CSMS の頼んでいない更新(自前の更新の入口など)では知らせない
+                // (GRIDPORT 1.6.10。テラチャージの OCPP 2.0.1 評価シート UF-020c・d で、新しい版で起きても Installed が無かった)
+                if (notificationRequestId < 0) {
+                    MO_DBG_INFO("new FW without UpdateFirmware request, no Installed notification");
+                    return nullptr;
+                }
+                setRequestId(-1);
+            }
+
             lastReportedStatus = FirmwareStatus::Installed;
-            auto fwNotificationMsg = new Ocpp16::FirmwareStatusNotification(lastReportedStatus, getNotificationRequestId());
+            auto fwNotificationMsg = new Ocpp16::FirmwareStatusNotification(lastReportedStatus, notificationRequestId);
             auto fwNotification = makeRequest(fwNotificationMsg);
             return fwNotification;
         }
