@@ -6,6 +6,7 @@
 #include <MicroOcpp/Model/Model.h>
 #include <MicroOcpp/Model/ConnectorBase/Connector.h>
 #include <MicroOcpp/Version.h>
+#include <MicroOcpp/Debug.h>
 
 #include <functional>
 
@@ -99,24 +100,29 @@ const char* ChangeAvailability::getOperationType(){
 void ChangeAvailability::processReq(JsonObject payload) {
 
     unsigned int evseId = 0;
-    
+
+    // 無い EVSE・コネクタは形の誤りではなく受け付けられない要求なので、CALLERROR でなく Rejected で返す
+    // (GRIDPORT 1.6.10。テラチャージの評価シート TM-CHA-002。形の誤りは受けたときの確かめが先に返す)
     if (payload.containsKey("evse")) {
         int evseIdRaw = payload["evse"]["id"] | -1;
         if (evseIdRaw < 0) {
-            errorCode = "FormationViolation";
+            MO_DBG_INFO("reject change availability for evse %d", evseIdRaw);
+            status = ChangeAvailabilityStatus::Rejected;
             return;
         }
         evseId = (unsigned int)evseIdRaw;
 
         if ((payload["evse"]["connectorId"] | 1) != 1) {
-            errorCode = "PropertyConstraintViolation";
+            MO_DBG_INFO("reject change availability for connector %d", payload["evse"]["connectorId"] | -1);
+            status = ChangeAvailabilityStatus::Rejected;
             return;
         }
     }
 
     auto availabilityEvse = availabilityService.getEvse(evseId);
     if (!availabilityEvse) {
-        errorCode = "PropertyConstraintViolation";
+        MO_DBG_INFO("reject change availability for evse %u", evseId);
+        status = ChangeAvailabilityStatus::Rejected;
         return;
     }
 

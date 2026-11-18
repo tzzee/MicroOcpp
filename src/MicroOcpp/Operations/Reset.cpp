@@ -82,7 +82,10 @@ void Reset::processReq(JsonObject payload) {
     int evseIdRaw = payload["evseId"] | 0;
 
     if (evseIdRaw < 0 || evseIdRaw >= MO_NUM_EVSEID) {
-        errorCode = "PropertyConstraintViolation";
+        // 無い EVSE は形の誤りではなく受け付けられない要求なので、CALLERROR でなく Rejected で返す
+        // (GRIDPORT 1.6.10。テラチャージの評価シート TM-RST-006)
+        MO_DBG_INFO("reject reset for evseId %d", evseIdRaw);
+        status = ResetStatus_Rejected;
         return;
     }
 

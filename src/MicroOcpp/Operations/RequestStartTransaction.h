@@ -24,8 +24,8 @@ class RequestStartTransaction : public Operation, public MemoryManaged {
 private:
     RemoteControlService& rcService;
 
-    RequestStartStopStatus status;
-    std::shared_ptr<Ocpp201::Transaction> transaction;
+    RequestStartStopStatus status = RequestStartStopStatus_Rejected;
+    /// 応答に載せる取引の ID(requestStartTransaction() が書く。空なら載せない)
     char transactionId [MO_TXID_LEN_MAX + 1] = {'\0'};
 
     const char *errorCode = nullptr;

@@ -82,6 +82,13 @@ ChargePointStatus AvailabilityServiceEvse::getStatus() {
 }
 
 void AvailabilityServiceEvse::setUnavailable(void *requesterId) {
+    // 同じ要求元は 1 つだけ持つ。重ねて足すと、同じ Inoperative を 2 回受けたあと Operative を 1 回受けても 1 つしか
+    // 外れず、Unavailable のまま戻らなかった(GRIDPORT 1.6.10。テラチャージの評価シートの ChangeAvailability を読んで)
+    for (size_t i = 0; i < MO_INOPERATIVE_REQUESTERS_MAX; i++) {
+        if (unavailableRequesters[i] == requesterId) {
+            return;
+        }
+    }
     for (size_t i = 0; i < MO_INOPERATIVE_REQUESTERS_MAX; i++) {
         if (!unavailableRequesters[i]) {
             unavailableRequesters[i] = requesterId;

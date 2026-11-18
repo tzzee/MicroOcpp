@@ -23,10 +23,17 @@ const char* RequestStartTransaction::getOperationType(){
 
 void RequestStartTransaction::processReq(JsonObject payload) {
 
-    int evseId = payload["evseId"] | 0;
-    if (evseId < 0 || evseId >= MO_NUM_EVSEID) {
-        errorCode = "PropertyConstraintViolation";
-        return;
+    // evseId は省けて、省けば充電器が選ぶ(0 として渡す)。書いてあれば 1 以上(スキーマの説明「EvseId SHALL be > 0」)。
+    // 0・負・無い EVSE は形の誤りではなく受け付けられない要求なので、CALLERROR でなく Rejected で返す
+    // (GRIDPORT 1.6.10。テラチャージの評価シート TM-EVS-002・003・004)
+    int evseId = 0;
+    if (payload.containsKey("evseId")) {
+        evseId = payload["evseId"] | -1;
+        if (evseId <= 0 || evseId >= MO_NUM_EVSEID) {
+            MO_DBG_INFO("reject remote start for evseId %d", evseId);
+            status = RequestStartStopStatus_Rejected;
+            return;
+        }
     }
 
     int remoteStartId = payload["remoteStartId"] | 0;
@@ -40,6 +47,14 @@ void RequestStartTransaction::processReq(JsonObject payload) {
     if (!idToken.parseCstr(payload["idToken"]["idToken"] | (const char*)nullptr, payload["idToken"]["type"] | (const char*)nullptr)) { //parseCstr rejects nullptr as argument
         MO_DBG_ERR("could not parse idToken");
         errorCode = "FormationViolation";
+        return;
+    }
+
+    // 空の idToken を持てるのは NoAuthorization だけ(IdTokenEnumType の説明)。ほかの型の空は誰とも照合できないので
+    // Rejected で返す(GRIDPORT 1.6.10。TM-IDT-001 で Central の空を Accepted にしていた)
+    if (idToken.get()[0] == '\0' && strcmp(idToken.getTypeCstr(), "NoAuthorization")) {
+        MO_DBG_INFO("reject remote start with empty idToken of type %s", idToken.getTypeCstr());
+        status = RequestStartStopStatus_Rejected;
         return;
     }
 
@@ -67,8 +82,11 @@ std::unique_ptr<JsonDoc> RequestStartTransaction::createConf(){
 
     payload["status"] = statusCstr;
 
-    if (transaction) {
-        payload["transactionId"] = (const char*)transaction->transactionId; //force zero-copy mode
+    // F01.FR.13: 認可の前の取引がある(先に挿した)ときは、その transactionId を応答に載せる。requestStartTransaction() は
+    // transactionId に写すが、ここは使われていない transaction を見ていて一度も載せていなかった(GRIDPORT 1.6.10。TM-CMB-004)。
+    // 受け付けたときだけ載せる(ほかの人の取引で断ったときに、その取引の ID を返さない)
+    if (status == RequestStartStopStatus_Accepted && transactionId[0] != '\0') {
+        payload["transactionId"] = (const char*)transactionId; //force zero-copy mode
     }
 
     return doc;

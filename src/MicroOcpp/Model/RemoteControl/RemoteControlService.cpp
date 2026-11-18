@@ -15,8 +15,25 @@
 #include <MicroOcpp/Operations/RequestStopTransaction.h>
 #include <MicroOcpp/Operations/TriggerMessage.h>
 #include <MicroOcpp/Operations/UnlockConnector.h>
+#include <MicroOcpp/Model/Boot/BootService.h>
 
 using namespace MicroOcpp;
+
+namespace {
+
+/**
+ * @brief BootNotification が Accepted になっているか。
+ * @details B02.FR.05: Pending のあいだに受けた RequestStartTransaction・RequestStopTransaction は Rejected で返す
+ *          (GRIDPORT 1.6.10。テラチャージの評価シート TM-STA-002 で、Pending でも遠隔開始を受けていた)
+ * @param context MicroOcpp の Context
+ * @return Accepted なら true(BootService が無ければ true)
+ */
+bool isRegistrationAccepted(Context& context) {
+    auto bootService = context.getModel().getBootService();
+    return !bootService || bootService->getRegistrationStatus() == RegistrationStatus::Accepted;
+}
+
+} //namespace
 
 RemoteControlServiceEvse::RemoteControlServiceEvse(Context& context, unsigned int evseId) : MemoryManaged("v201.RemoteControl.RemoteControlServiceEvse"), context(context), evseId(evseId) {
 
@@ -109,7 +126,12 @@ RequestStartStopStatus RemoteControlService::requestStartTransaction(unsigned in
         MO_DBG_ERR("TxService uninitialized");
         return RequestStartStopStatus_Rejected;
     }
-    
+
+    if (!isRegistrationAccepted(context)) {
+        MO_DBG_INFO("reject remote start while not registered (B02.FR.05)");
+        return RequestStartStopStatus_Rejected;
+    }
+
     //evseId is optional in RequestStartTransaction and leaves the choice to the charger. EVSE 0 is the whole station and
     //never carries a transaction, so starting there accepted every remote start, even while EVSE 1 was charging for
     //someone else (2026-10-22, j1772-arduino: Accepted during an ISO15118 transaction). Take the first EVSE which is not
@@ -168,6 +190,11 @@ RequestStartStopStatus RemoteControlService::requestStopTransaction(const char *
     TransactionService *txService = context.getModel().getTransactionService();
     if (!txService) {
         MO_DBG_ERR("TxService uninitialized");
+        return RequestStartStopStatus_Rejected;
+    }
+
+    if (!isRegistrationAccepted(context)) {
+        MO_DBG_INFO("reject remote stop while not registered (B02.FR.05)");
         return RequestStartStopStatus_Rejected;
     }
 
